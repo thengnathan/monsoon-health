@@ -1,26 +1,42 @@
+import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useUser, UserButton } from '@clerk/clerk-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../App';
+import { NotePopup } from '../pages/NotesPage';
+import { api } from '../api';
 
 const navItems = [
     { to: '/', label: 'Today', icon: '◉', end: true },
     { to: '/screening', label: 'Screening Cases', icon: '◎' },
     { to: '/patients', label: 'Patients', icon: '◇' },
     { to: '/trials', label: 'Trials', icon: '△' },
+    { to: '/notes', label: 'Notes', icon: '☰' },
 ];
 
 export default function Layout() {
     const { user } = useAuth();
     const { user: clerkUser } = useUser();
     const { theme, toggle } = useTheme();
+    const [floatingNote, setFloatingNote] = useState(undefined);
 
-    // Use Clerk user name, fallback to internal user name
     const displayName = clerkUser
         ? [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(' ') || user?.name || 'User'
         : user?.name || 'User';
 
     const role = user?.role || 'CRC';
+
+    const handleFloatingSave = async (data, id) => {
+        if (id) {
+            await api.updateNote(id, data);
+        } else {
+            await api.createNote(data);
+        }
+    };
+
+    const handleFloatingDelete = async (id) => {
+        await api.deleteNote(id);
+    };
 
     return (
         <div className="app-layout">
@@ -50,15 +66,11 @@ export default function Layout() {
 
                 <div className="sidebar-footer">
                     <div className="sidebar-user" style={{ gap: 'var(--space-3)' }}>
-                        {/* Clerk UserButton — shows avatar with initials, click for settings */}
                         <UserButton
                             afterSignOutUrl="/login"
                             appearance={{
                                 elements: {
-                                    avatarBox: {
-                                        width: 36,
-                                        height: 36,
-                                    },
+                                    avatarBox: { width: 36, height: 36 },
                                     userButtonPopoverCard: {
                                         backgroundColor: 'var(--bg-surface)',
                                         border: '1px solid var(--border-default)',
@@ -75,18 +87,30 @@ export default function Layout() {
             </aside>
 
             <main className="app-main">
-                {/* Theme toggle — top right */}
+                {/* Theme toggle — top right, vertical pill */}
                 <div className="theme-toggle-container">
-                    <button className="theme-toggle" onClick={toggle} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
-                        <span className="theme-toggle-track">
-                            <span className={`theme-toggle-thumb ${theme}`} />
-                            <span className="theme-toggle-icon sun">☀️</span>
-                            <span className="theme-toggle-icon moon">🌙</span>
-                        </span>
+                    <button className="theme-toggle-mini" onClick={toggle} title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>
+                        <svg className={`theme-icon ${theme === 'light' ? 'active' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+                        </svg>
+                        <svg className={`theme-icon ${theme === 'dark' ? 'active' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z" />
+                        </svg>
                     </button>
                 </div>
-                <Outlet />
+
+                <Outlet context={{ setFloatingNote }} />
             </main>
+
+            {/* Global floating note — persists across page navigation, no overlay blocking */}
+            {floatingNote !== undefined && (
+                <NotePopup
+                    note={floatingNote}
+                    onSave={handleFloatingSave}
+                    onDelete={handleFloatingDelete}
+                    onClose={() => setFloatingNote(undefined)}
+                />
+            )}
         </div>
     );
 }

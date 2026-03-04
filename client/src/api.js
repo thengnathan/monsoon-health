@@ -156,4 +156,10 @@ export const api = {
     getPatientDocuments: (patientId) => request(`/patients/${patientId}/documents`),
     getDocumentUrl: (patientId, docId) => `${API_BASE}/patients/${patientId}/documents/${docId}/download`,
     deletePatientDocument: (patientId, docId) => request(`/patients/${patientId}/documents/${docId}`, { method: 'DELETE' }),
+
+    // Notes
+    getNotes: () => request('/notes'),
+    createNote: (data) => request('/notes', { method: 'POST', body: data }),
+    updateNote: (id, data) => request(`/notes/${id}`, { method: 'PATCH', body: data }),
+    deleteNote: (id) => request(`/notes/${id}`, { method: 'DELETE' }),
 };

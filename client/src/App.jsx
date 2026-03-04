@@ -13,6 +13,7 @@ import TrialsPage from './pages/TrialsPage';
 import TrialDetailPage from './pages/TrialDetailPage';
 import ScreeningCasesPage from './pages/ScreeningCasesPage';
 import ScreeningCaseDetailPage from './pages/ScreeningCaseDetailPage';
+import NotesPage from './pages/NotesPage';
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -168,6 +169,7 @@ function AppRoutes() {
                 <Route path="trials/:id" element={<TrialDetailPage />} />
                 <Route path="screening" element={<ScreeningCasesPage />} />
                 <Route path="screening/:id" element={<ScreeningCaseDetailPage />} />
+                <Route path="notes" element={<NotesPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/login" />} />
         </Routes>

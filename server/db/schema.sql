@@ -290,3 +290,18 @@ CREATE TABLE IF NOT EXISTS patient_documents (
 );
 CREATE INDEX IF NOT EXISTS idx_patient_docs_patient ON patient_documents(patient_id);
 CREATE INDEX IF NOT EXISTS idx_patient_docs_site ON patient_documents(site_id);
+
+-- 18) Notes
+CREATE TABLE IF NOT EXISTS notes (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  title TEXT NOT NULL DEFAULT '',
+  content TEXT NOT NULL DEFAULT '',
+  color TEXT NOT NULL DEFAULT 'default',
+  is_pinned INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
+CREATE INDEX IF NOT EXISTS idx_notes_site ON notes(site_id, user_id);

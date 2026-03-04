@@ -75,7 +75,11 @@ export default function PatientsPage() {
                 </div>
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-                        {uploading ? '⏳ Processing…' : '📄 Upload Document'}
+                        {uploading ? (
+                            <><span className="spinner" style={{ width: 14, height: 14 }} /> Processing…</>
+                        ) : (
+                            <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: -2 }}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><polyline points="9 15 12 12 15 15" /></svg>Upload Document</>
+                        )}
                     </button>
                     <button id="add-patient-btn" className="btn btn-primary" onClick={() => setShowModal(true)}>+ Add Patient</button>
                 </div>
@@ -106,7 +110,9 @@ export default function PatientsPage() {
                     </p>
                     {!search && (
                         <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-5)', justifyContent: 'center' }}>
-                            <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>📄 Upload Document</button>
+                            <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: -2 }}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><polyline points="9 15 12 12 15 15" /></svg>Upload Document
+                            </button>
                             <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Add Manually</button>
                         </div>
                     )}

@@ -45,6 +45,7 @@ app.use('/api/referral-sources', require('./routes/referralSources'));
 app.use('/api/today', require('./routes/today'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/notes', require('./routes/notes'));
 app.use('/api', require('./routes/visits'));
 
 // Start scheduler
