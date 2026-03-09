@@ -6,7 +6,12 @@ node_modules/
 
 # Database
 server/data/*.db
+server/data/*.db-shm
+server/data/*.db-wal
 server/*.db
+
+# Compiled server output
+server/dist/
 
 # Build output
 client/dist/
