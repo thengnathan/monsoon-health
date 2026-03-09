@@ -4,23 +4,13 @@ const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const { authMiddleware, requireRole, auditLog } = require('../middleware/auth');
 
-// --- Protocol text extraction helpers ---
 function extractCriteria(text) {
     const result = { inclusion: null, exclusion: null };
     const normalized = text.replace(/\r\n/g, '\n');
-
-    // Try to find inclusion criteria section
     const inclMatch = normalized.match(/(?:inclusion\s+criteria|eligibility\s+criteria|key\s+inclusion)[:\s]*\n([\s\S]*?)(?=(?:exclusion\s+criteria|key\s+exclusion|study\s+procedures|study\s+design|endpoints|primary\s+endpoint|statistical)|$)/i);
-    if (inclMatch && inclMatch[1]) {
-        result.inclusion = cleanCriteriaText(inclMatch[1]);
-    }
-
-    // Try to find exclusion criteria section
+    if (inclMatch) result.inclusion = cleanCriteriaText(inclMatch[1]);
     const exclMatch = normalized.match(/(?:exclusion\s+criteria|key\s+exclusion)[:\s]*\n([\s\S]*?)(?=(?:study\s+procedures|study\s+design|endpoints|primary\s+endpoint|statistical|visit\s+schedule|study\s+assessments)|$)/i);
-    if (exclMatch && exclMatch[1]) {
-        result.exclusion = cleanCriteriaText(exclMatch[1]);
-    }
-
+    if (exclMatch) result.exclusion = cleanCriteriaText(exclMatch[1]);
     return result;
 }
 
@@ -28,195 +18,186 @@ function cleanCriteriaText(raw) {
     const lines = raw.split('\n')
         .map(l => l.replace(/^[\s•●○▪\-–—\d.)+]+\s*/, '').trim())
         .filter(l => l.length > 5 && l.length < 500)
-        .slice(0, 30); // cap at 30 criteria
+        .slice(0, 30);
     return lines.length > 0 ? lines.join('\n') : null;
 }
 
 const router = express.Router();
 router.use(authMiddleware);
 
-// Multer config — store in memory for SQLite blob storage
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
+    limits: { fileSize: 25 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
-        if (file.mimetype === 'application/pdf') {
-            cb(null, true);
-        } else {
-            cb(new Error('Only PDF files are accepted'));
-        }
+        if (file.mimetype === 'application/pdf') cb(null, true);
+        else cb(new Error('Only PDF files are accepted'));
     }
 });
 
-// GET /api/trials
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
     const db = req.app.locals.db;
     const { status } = req.query;
-    let sql = 'SELECT * FROM trials WHERE site_id = ?';
+    let sql = 'SELECT * FROM trials WHERE site_id = $1';
     const params = [req.user.site_id];
 
     if (status) {
-        sql += ' AND recruiting_status = ?';
+        sql += ' AND recruiting_status = $2';
         params.push(status);
     }
-
     sql += ' ORDER BY name';
-    const trials = db.prepare(sql).all(...params);
 
-    // Get case counts per trial
-    const caseCounts = db.prepare(`
-    SELECT trial_id, status, COUNT(*) as cnt 
-    FROM screening_cases WHERE site_id = ? 
-    GROUP BY trial_id, status
-  `).all(req.user.site_id);
+    const { rows: trials } = await db.query(sql, params);
+
+    const { rows: caseCounts } = await db.query(
+        `SELECT trial_id, status, COUNT(*) as cnt FROM screening_cases WHERE site_id = $1 GROUP BY trial_id, status`,
+        [req.user.site_id]
+    );
 
     const countMap = {};
     caseCounts.forEach(c => {
         if (!countMap[c.trial_id]) countMap[c.trial_id] = {};
-        countMap[c.trial_id][c.status] = c.cnt;
+        countMap[c.trial_id][c.status] = Number(c.cnt);
     });
 
-    const trialsWithCounts = trials.map(t => ({
-        ...t,
-        case_counts: countMap[t.id] || {}
-    }));
-
-    res.json(trialsWithCounts);
+    res.json(trials.map(t => ({ ...t, case_counts: countMap[t.id] || {} })));
 });
 
-// POST /api/trials
-router.post('/', requireRole('MANAGER', 'CRC'), (req, res) => {
+router.post('/', requireRole('MANAGER', 'CRC'), async (req, res) => {
     const db = req.app.locals.db;
     const id = uuidv4();
     const { name, protocol_number, specialty, recruiting_status = 'ACTIVE', description, inclusion_criteria, exclusion_criteria } = req.body;
 
     if (!name) return res.status(400).json({ error: 'name is required' });
 
-    db.prepare(`
-    INSERT INTO trials (id, site_id, name, protocol_number, specialty, recruiting_status, description, inclusion_criteria, exclusion_criteria)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, req.user.site_id, name, protocol_number || null, specialty || null, recruiting_status, description || null, inclusion_criteria || null, exclusion_criteria || null);
+    await db.query(
+        `INSERT INTO trials (id, site_id, name, protocol_number, specialty, recruiting_status, description, inclusion_criteria, exclusion_criteria)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [id, req.user.site_id, name, protocol_number || null, specialty || null, recruiting_status, description || null, inclusion_criteria || null, exclusion_criteria || null]
+    );
 
-    auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'trial', entityId: id, action: 'CREATE', diff: req.body });
+    await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'trial', entityId: id, action: 'CREATE', diff: req.body });
 
-    const trial = db.prepare('SELECT * FROM trials WHERE id = ?').get(id);
+    const trial = (await db.query('SELECT * FROM trials WHERE id = $1', [id])).rows[0];
     res.status(201).json(trial);
 });
 
-// GET /api/trials/:id
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
     const db = req.app.locals.db;
-    const trial = db.prepare('SELECT * FROM trials WHERE id = ? AND site_id = ?').get(req.params.id, req.user.site_id);
+    const trial = (await db.query(
+        'SELECT * FROM trials WHERE id = $1 AND site_id = $2',
+        [req.params.id, req.user.site_id]
+    )).rows[0];
     if (!trial) return res.status(404).json({ error: 'Trial not found' });
 
-    // Get signal rules
-    const rules = db.prepare(`
-    SELECT tsr.*, st.name as signal_name, st.label as signal_label, st.unit, st.value_type
-    FROM trial_signal_rules tsr
-    JOIN signal_types st ON tsr.signal_type_id = st.id
-    WHERE tsr.trial_id = ? AND tsr.site_id = ?
-    ORDER BY st.label
-  `).all(req.params.id, req.user.site_id);
+    const [rules, cases, protocol, visit_templates] = await Promise.all([
+        db.query(`SELECT tsr.*, st.name as signal_name, st.label as signal_label, st.unit, st.value_type
+                  FROM trial_signal_rules tsr JOIN signal_types st ON tsr.signal_type_id = st.id
+                  WHERE tsr.trial_id = $1 AND tsr.site_id = $2 ORDER BY st.label`,
+                 [req.params.id, req.user.site_id]),
+        db.query(`SELECT sc.*, p.first_name, p.last_name, p.dob, u.name as assigned_user_name
+                  FROM screening_cases sc JOIN patients p ON sc.patient_id = p.id
+                  LEFT JOIN users u ON sc.assigned_user_id = u.id
+                  WHERE sc.trial_id = $1 AND sc.site_id = $2 ORDER BY sc.updated_at DESC`,
+                 [req.params.id, req.user.site_id]),
+        db.query(`SELECT id, filename, mime_type, file_size, version, uploaded_by_user_id, created_at
+                  FROM trial_protocols WHERE trial_id = $1 AND site_id = $2 ORDER BY created_at DESC LIMIT 1`,
+                 [req.params.id, req.user.site_id]),
+        db.query(`SELECT * FROM visit_templates WHERE trial_id = $1 AND site_id = $2 ORDER BY sort_order, day_offset`,
+                 [req.params.id, req.user.site_id]),
+    ]);
 
-    // Get screening cases
-    const cases = db.prepare(`
-    SELECT sc.*, p.first_name, p.last_name, p.dob, u.name as assigned_user_name
-    FROM screening_cases sc
-    JOIN patients p ON sc.patient_id = p.id
-    LEFT JOIN users u ON sc.assigned_user_id = u.id
-    WHERE sc.trial_id = ? AND sc.site_id = ?
-    ORDER BY sc.updated_at DESC
-  `).all(req.params.id, req.user.site_id);
-
-    // Get protocol metadata (without file_data blob)
-    const protocol = db.prepare(`
-    SELECT id, filename, mime_type, file_size, version, uploaded_by_user_id, created_at
-    FROM trial_protocols WHERE trial_id = ? AND site_id = ?
-    ORDER BY created_at DESC LIMIT 1
-  `).get(req.params.id, req.user.site_id);
-
-    // Get visit templates
-    const visit_templates = db.prepare(`
-    SELECT * FROM visit_templates WHERE trial_id = ? AND site_id = ?
-    ORDER BY sort_order, day_offset
-  `).all(req.params.id, req.user.site_id);
-
-    res.json({ ...trial, signal_rules: rules, screening_cases: cases, protocol: protocol || null, visit_templates });
+    res.json({
+        ...trial,
+        signal_rules: rules.rows,
+        screening_cases: cases.rows,
+        protocol: protocol.rows[0] || null,
+        visit_templates: visit_templates.rows
+    });
 });
 
-// PATCH /api/trials/:id
-router.patch('/:id', requireRole('MANAGER', 'CRC'), (req, res) => {
+router.patch('/:id', requireRole('MANAGER', 'CRC'), async (req, res) => {
     const db = req.app.locals.db;
-    const existing = db.prepare('SELECT * FROM trials WHERE id = ? AND site_id = ?').get(req.params.id, req.user.site_id);
+    const existing = (await db.query(
+        'SELECT * FROM trials WHERE id = $1 AND site_id = $2',
+        [req.params.id, req.user.site_id]
+    )).rows[0];
     if (!existing) return res.status(404).json({ error: 'Trial not found' });
 
-    const fields = ['name', 'protocol_number', 'specialty', 'recruiting_status', 'description', 'inclusion_criteria', 'exclusion_criteria'];
     const updates = [];
     const values = [];
+    let p = 0;
 
-    for (const field of fields) {
-        if (req.body[field] !== undefined) {
-            updates.push(`${field} = ?`);
-            values.push(req.body[field]);
-        }
+    for (const field of ['name', 'protocol_number', 'specialty', 'recruiting_status', 'description', 'inclusion_criteria', 'exclusion_criteria']) {
+        if (req.body[field] !== undefined) { updates.push(`${field} = $${++p}`); values.push(req.body[field]); }
     }
 
     if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
-    updates.push("updated_at = datetime('now')");
+    updates.push(`updated_at = NOW()`);
     values.push(req.params.id, req.user.site_id);
 
-    db.prepare(`UPDATE trials SET ${updates.join(', ')} WHERE id = ? AND site_id = ?`).run(...values);
-    auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'trial', entityId: req.params.id, action: 'UPDATE', diff: req.body });
+    await db.query(`UPDATE trials SET ${updates.join(', ')} WHERE id = $${++p} AND site_id = $${++p}`, values);
+    await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'trial', entityId: req.params.id, action: 'UPDATE', diff: req.body });
 
-    const trial = db.prepare('SELECT * FROM trials WHERE id = ?').get(req.params.id);
+    const trial = (await db.query('SELECT * FROM trials WHERE id = $1', [req.params.id])).rows[0];
     res.json(trial);
 });
 
-// --- Protocol Upload ---
+// --- Protocol Upload (Supabase Storage) ---
 
-// POST /api/trials/:id/protocol — upload PDF + auto-extract I/E criteria
 router.post('/:id/protocol', requireRole('MANAGER', 'CRC'), upload.single('file'), async (req, res) => {
     try {
         const db = req.app.locals.db;
-        const trial = db.prepare('SELECT * FROM trials WHERE id = ? AND site_id = ?').get(req.params.id, req.user.site_id);
+        const supabase = req.app.locals.supabase;
+        const trial = (await db.query(
+            'SELECT * FROM trials WHERE id = $1 AND site_id = $2',
+            [req.params.id, req.user.site_id]
+        )).rows[0];
         if (!trial) return res.status(404).json({ error: 'Trial not found' });
         if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
         const id = uuidv4();
         const version = req.body.version || null;
+        const storagePath = `${req.user.site_id}/trials/${req.params.id}/${id}.pdf`;
 
-        // Delete existing protocol for this trial (replace)
-        db.prepare('DELETE FROM trial_protocols WHERE trial_id = ? AND site_id = ?').run(req.params.id, req.user.site_id);
+        // Delete existing protocol from DB and Storage
+        const existing = (await db.query(
+            'SELECT storage_path FROM trial_protocols WHERE trial_id = $1 AND site_id = $2',
+            [req.params.id, req.user.site_id]
+        )).rows[0];
+        if (existing) {
+            await supabase.storage.from('trial-protocols').remove([existing.storage_path]);
+            await db.query('DELETE FROM trial_protocols WHERE trial_id = $1 AND site_id = $2', [req.params.id, req.user.site_id]);
+        }
 
-        db.prepare(`
-        INSERT INTO trial_protocols (id, site_id, trial_id, filename, mime_type, file_size, file_data, version, uploaded_by_user_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, req.user.site_id, req.params.id, req.file.originalname, req.file.mimetype, req.file.size, req.file.buffer, version, req.user.id);
+        // Upload to Supabase Storage
+        const { error: uploadError } = await supabase.storage
+            .from('trial-protocols')
+            .upload(storagePath, req.file.buffer, { contentType: req.file.mimetype, upsert: true });
+        if (uploadError) throw uploadError;
 
-        auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'trial_protocol', entityId: id, action: 'CREATE', diff: { filename: req.file.originalname, size: req.file.size } });
+        await db.query(
+            `INSERT INTO trial_protocols (id, site_id, trial_id, filename, mime_type, file_size, storage_path, version, uploaded_by_user_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [id, req.user.site_id, req.params.id, req.file.originalname, req.file.mimetype, req.file.size, storagePath, version, req.user.id]
+        );
 
-        // Auto-extract I/E criteria from PDF text
+        await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'trial_protocol', entityId: id, action: 'CREATE', diff: { filename: req.file.originalname, size: req.file.size } });
+
+        // Auto-extract I/E criteria from PDF
         let extracted = { inclusion: null, exclusion: null };
         try {
             const pdfData = await pdfParse(req.file.buffer);
             extracted = extractCriteria(pdfData.text);
-
-            // Auto-populate criteria if not already set
             if (extracted.inclusion || extracted.exclusion) {
-                const updates = [];
-                const vals = [];
-                if (extracted.inclusion && !trial.inclusion_criteria) {
-                    updates.push('inclusion_criteria = ?');
-                    vals.push(extracted.inclusion);
-                }
-                if (extracted.exclusion && !trial.exclusion_criteria) {
-                    updates.push('exclusion_criteria = ?');
-                    vals.push(extracted.exclusion);
-                }
-                if (updates.length > 0) {
-                    vals.push(req.params.id, req.user.site_id);
-                    db.prepare(`UPDATE trials SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ? AND site_id = ?`).run(...vals);
+                const criteriaUpdates = [];
+                const criteriaVals = [];
+                let cp = 0;
+                if (extracted.inclusion && !trial.inclusion_criteria) { criteriaUpdates.push(`inclusion_criteria = $${++cp}`); criteriaVals.push(extracted.inclusion); }
+                if (extracted.exclusion && !trial.exclusion_criteria) { criteriaUpdates.push(`exclusion_criteria = $${++cp}`); criteriaVals.push(extracted.exclusion); }
+                if (criteriaUpdates.length > 0) {
+                    criteriaVals.push(req.params.id, req.user.site_id);
+                    await db.query(`UPDATE trials SET ${criteriaUpdates.join(', ')}, updated_at = NOW() WHERE id = $${++cp} AND site_id = $${++cp}`, criteriaVals);
                 }
             }
         } catch (parseErr) {
@@ -226,10 +207,7 @@ router.post('/:id/protocol', requireRole('MANAGER', 'CRC'), upload.single('file'
         res.status(201).json({
             id, filename: req.file.originalname, file_size: req.file.size, version,
             created_at: new Date().toISOString(),
-            auto_extracted: {
-                inclusion_criteria: extracted.inclusion ? true : false,
-                exclusion_criteria: extracted.exclusion ? true : false
-            }
+            auto_extracted: { inclusion_criteria: !!extracted.inclusion, exclusion_criteria: !!extracted.exclusion }
         });
     } catch (err) {
         console.error('[Protocol] Upload error:', err);
@@ -237,46 +215,49 @@ router.post('/:id/protocol', requireRole('MANAGER', 'CRC'), upload.single('file'
     }
 });
 
-// GET /api/trials/:id/protocol/download
-router.get('/:id/protocol/download', (req, res) => {
+router.get('/:id/protocol/download', async (req, res) => {
     const db = req.app.locals.db;
-    const protocol = db.prepare(`
-    SELECT filename, mime_type, file_data FROM trial_protocols
-    WHERE trial_id = ? AND site_id = ?
-    ORDER BY created_at DESC LIMIT 1
-  `).get(req.params.id, req.user.site_id);
-
+    const supabase = req.app.locals.supabase;
+    const protocol = (await db.query(
+        `SELECT filename, mime_type, storage_path FROM trial_protocols WHERE trial_id = $1 AND site_id = $2 ORDER BY created_at DESC LIMIT 1`,
+        [req.params.id, req.user.site_id]
+    )).rows[0];
     if (!protocol) return res.status(404).json({ error: 'No protocol uploaded' });
 
-    res.setHeader('Content-Type', protocol.mime_type);
-    res.setHeader('Content-Disposition', `inline; filename="${protocol.filename}"`);
-    res.send(protocol.file_data);
+    const { data, error } = await supabase.storage.from('trial-protocols').createSignedUrl(protocol.storage_path, 3600);
+    if (error) return res.status(500).json({ error: 'Could not generate download URL' });
+
+    res.redirect(data.signedUrl);
 });
 
-// DELETE /api/trials/:id/protocol
-router.delete('/:id/protocol', requireRole('MANAGER'), (req, res) => {
+router.delete('/:id/protocol', requireRole('MANAGER'), async (req, res) => {
     const db = req.app.locals.db;
-    const result = db.prepare('DELETE FROM trial_protocols WHERE trial_id = ? AND site_id = ?').run(req.params.id, req.user.site_id);
-    if (result.changes === 0) return res.status(404).json({ error: 'No protocol found' });
+    const supabase = req.app.locals.supabase;
+    const protocol = (await db.query(
+        'SELECT storage_path FROM trial_protocols WHERE trial_id = $1 AND site_id = $2',
+        [req.params.id, req.user.site_id]
+    )).rows[0];
+    if (!protocol) return res.status(404).json({ error: 'No protocol found' });
+
+    await supabase.storage.from('trial-protocols').remove([protocol.storage_path]);
+    await db.query('DELETE FROM trial_protocols WHERE trial_id = $1 AND site_id = $2', [req.params.id, req.user.site_id]);
     res.json({ message: 'Protocol deleted' });
 });
 
-// --- Trial Signal Rules ---
+// --- Signal Rules ---
 
-// GET /api/trials/:id/signal-rules
-router.get('/:id/signal-rules', (req, res) => {
+router.get('/:id/signal-rules', async (req, res) => {
     const db = req.app.locals.db;
-    const rules = db.prepare(`
-    SELECT tsr.*, st.name as signal_name, st.label as signal_label, st.unit, st.value_type
-    FROM trial_signal_rules tsr
-    JOIN signal_types st ON tsr.signal_type_id = st.id
-    WHERE tsr.trial_id = ? AND tsr.site_id = ?
-  `).all(req.params.id, req.user.site_id);
-    res.json(rules);
+    const { rows } = await db.query(
+        `SELECT tsr.*, st.name as signal_name, st.label as signal_label, st.unit, st.value_type
+         FROM trial_signal_rules tsr JOIN signal_types st ON tsr.signal_type_id = st.id
+         WHERE tsr.trial_id = $1 AND tsr.site_id = $2`,
+        [req.params.id, req.user.site_id]
+    );
+    res.json(rows);
 });
 
-// POST /api/trials/:id/signal-rules
-router.post('/:id/signal-rules', requireRole('MANAGER', 'CRC'), (req, res) => {
+router.post('/:id/signal-rules', requireRole('MANAGER', 'CRC'), async (req, res) => {
     const db = req.app.locals.db;
     const id = uuidv4();
     const { signal_type_id, operator, threshold_number, threshold_text, threshold_list } = req.body;
@@ -285,62 +266,62 @@ router.post('/:id/signal-rules', requireRole('MANAGER', 'CRC'), (req, res) => {
         return res.status(400).json({ error: 'signal_type_id and operator required' });
     }
 
-    db.prepare(`
-    INSERT INTO trial_signal_rules (id, site_id, trial_id, signal_type_id, operator, threshold_number, threshold_text, threshold_list, is_active)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-  `).run(id, req.user.site_id, req.params.id, signal_type_id, operator,
-        threshold_number != null ? threshold_number : null,
-        threshold_text || null,
-        threshold_list ? JSON.stringify(threshold_list) : null);
+    await db.query(
+        `INSERT INTO trial_signal_rules (id, site_id, trial_id, signal_type_id, operator, threshold_number, threshold_text, threshold_list, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)`,
+        [id, req.user.site_id, req.params.id, signal_type_id, operator,
+         threshold_number != null ? threshold_number : null,
+         threshold_text || null,
+         threshold_list ? JSON.stringify(threshold_list) : null]
+    );
 
-    const rule = db.prepare(`
-    SELECT tsr.*, st.name as signal_name, st.label as signal_label, st.unit
-    FROM trial_signal_rules tsr
-    JOIN signal_types st ON tsr.signal_type_id = st.id
-    WHERE tsr.id = ?
-  `).get(id);
+    const rule = (await db.query(
+        `SELECT tsr.*, st.name as signal_name, st.label as signal_label, st.unit
+         FROM trial_signal_rules tsr JOIN signal_types st ON tsr.signal_type_id = st.id
+         WHERE tsr.id = $1`,
+        [id]
+    )).rows[0];
     res.status(201).json(rule);
 });
 
-// PATCH /api/signal-rules/:ruleId
-router.patch('/signal-rules/:ruleId', requireRole('MANAGER', 'CRC'), (req, res) => {
+router.patch('/signal-rules/:ruleId', requireRole('MANAGER', 'CRC'), async (req, res) => {
     const db = req.app.locals.db;
-    const existing = db.prepare('SELECT * FROM trial_signal_rules WHERE id = ? AND site_id = ?').get(req.params.ruleId, req.user.site_id);
+    const existing = (await db.query(
+        'SELECT * FROM trial_signal_rules WHERE id = $1 AND site_id = $2',
+        [req.params.ruleId, req.user.site_id]
+    )).rows[0];
     if (!existing) return res.status(404).json({ error: 'Rule not found' });
 
-    const fields = ['operator', 'threshold_number', 'threshold_text', 'is_active'];
     const updates = [];
     const values = [];
+    let p = 0;
 
-    for (const field of fields) {
-        if (req.body[field] !== undefined) {
-            updates.push(`${field} = ?`);
-            values.push(req.body[field]);
-        }
+    for (const field of ['operator', 'threshold_number', 'threshold_text', 'is_active']) {
+        if (req.body[field] !== undefined) { updates.push(`${field} = $${++p}`); values.push(req.body[field]); }
     }
     if (req.body.threshold_list !== undefined) {
-        updates.push('threshold_list = ?');
+        updates.push(`threshold_list = $${++p}`);
         values.push(JSON.stringify(req.body.threshold_list));
     }
 
     if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
-    updates.push("updated_at = datetime('now')");
+    updates.push(`updated_at = NOW()`);
     values.push(req.params.ruleId, req.user.site_id);
 
-    db.prepare(`UPDATE trial_signal_rules SET ${updates.join(', ')} WHERE id = ? AND site_id = ?`).run(...values);
-
-    const rule = db.prepare('SELECT * FROM trial_signal_rules WHERE id = ?').get(req.params.ruleId);
+    await db.query(`UPDATE trial_signal_rules SET ${updates.join(', ')} WHERE id = $${++p} AND site_id = $${++p}`, values);
+    const rule = (await db.query('SELECT * FROM trial_signal_rules WHERE id = $1', [req.params.ruleId])).rows[0];
     res.json(rule);
 });
 
-// DELETE /api/signal-rules/:ruleId
-router.delete('/signal-rules/:ruleId', requireRole('MANAGER', 'CRC'), (req, res) => {
+router.delete('/signal-rules/:ruleId', requireRole('MANAGER', 'CRC'), async (req, res) => {
     const db = req.app.locals.db;
-    const result = db.prepare('DELETE FROM trial_signal_rules WHERE id = ? AND site_id = ?').run(req.params.ruleId, req.user.site_id);
-    if (result.changes === 0) return res.status(404).json({ error: 'Rule not found' });
+    const result = await db.query(
+        'DELETE FROM trial_signal_rules WHERE id = $1 AND site_id = $2',
+        [req.params.ruleId, req.user.site_id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Rule not found' });
     res.json({ message: 'Rule deleted' });
 });
 
 module.exports = router;
-

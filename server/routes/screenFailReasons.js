@@ -5,58 +5,60 @@ const { authMiddleware } = require('../middleware/auth');
 const router = express.Router();
 router.use(authMiddleware);
 
-// GET /api/screen-fail-reasons
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
     const db = req.app.locals.db;
     const { specialty } = req.query;
-    let sql = 'SELECT * FROM screen_fail_reasons WHERE site_id = ?';
+    let sql = 'SELECT * FROM screen_fail_reasons WHERE site_id = $1';
     const params = [req.user.site_id];
 
     if (specialty) {
-        sql += ' AND (specialty = ? OR specialty IS NULL)';
+        sql += ' AND (specialty = $2 OR specialty IS NULL)';
         params.push(specialty);
     }
 
     sql += ' ORDER BY label';
-    const reasons = db.prepare(sql).all(...params);
-    res.json(reasons);
+    const { rows } = await db.query(sql, params);
+    res.json(rows);
 });
 
-// POST /api/screen-fail-reasons
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
     const db = req.app.locals.db;
     const id = uuidv4();
     const { code, label, specialty, explanation_template } = req.body;
 
     if (!code || !label) return res.status(400).json({ error: 'code and label required' });
 
-    db.prepare(`
-    INSERT INTO screen_fail_reasons (id, site_id, specialty, code, label, explanation_template)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, req.user.site_id, specialty || null, code, label, explanation_template || null);
+    await db.query(
+        `INSERT INTO screen_fail_reasons (id, site_id, specialty, code, label, explanation_template) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [id, req.user.site_id, specialty || null, code, label, explanation_template || null]
+    );
 
-    const reason = db.prepare('SELECT * FROM screen_fail_reasons WHERE id = ?').get(id);
+    const reason = (await db.query('SELECT * FROM screen_fail_reasons WHERE id = $1', [id])).rows[0];
     res.status(201).json(reason);
 });
 
-// PATCH /api/screen-fail-reasons/:id
-router.patch('/:id', (req, res) => {
+router.patch('/:id', async (req, res) => {
     const db = req.app.locals.db;
-    const existing = db.prepare('SELECT * FROM screen_fail_reasons WHERE id = ? AND site_id = ?').get(req.params.id, req.user.site_id);
+    const existing = (await db.query(
+        'SELECT * FROM screen_fail_reasons WHERE id = $1 AND site_id = $2',
+        [req.params.id, req.user.site_id]
+    )).rows[0];
     if (!existing) return res.status(404).json({ error: 'Not found' });
 
-    const fields = ['code', 'label', 'specialty', 'explanation_template'];
     const updates = [];
     const values = [];
-    for (const f of fields) {
-        if (req.body[f] !== undefined) { updates.push(`${f} = ?`); values.push(req.body[f]); }
+    let p = 0;
+
+    for (const f of ['code', 'label', 'specialty', 'explanation_template']) {
+        if (req.body[f] !== undefined) { updates.push(`${f} = $${++p}`); values.push(req.body[f]); }
     }
     if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
-    updates.push("updated_at = datetime('now')");
+
+    updates.push(`updated_at = NOW()`);
     values.push(req.params.id, req.user.site_id);
 
-    db.prepare(`UPDATE screen_fail_reasons SET ${updates.join(', ')} WHERE id = ? AND site_id = ?`).run(...values);
-    const reason = db.prepare('SELECT * FROM screen_fail_reasons WHERE id = ?').get(req.params.id);
+    await db.query(`UPDATE screen_fail_reasons SET ${updates.join(', ')} WHERE id = $${++p} AND site_id = $${++p}`, values);
+    const reason = (await db.query('SELECT * FROM screen_fail_reasons WHERE id = $1', [req.params.id])).rows[0];
     res.json(reason);
 });
 

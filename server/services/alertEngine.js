@@ -1,58 +1,51 @@
 const { v4: uuidv4 } = require('uuid');
 
-/**
- * Evaluate trial signal rules against a newly recorded signal.
- * Creates THRESHOLD_CROSSED notification events when thresholds are met.
- */
-function evaluateThresholds(db, { siteId, patientId, signalTypeId, value, signalType }) {
+async function evaluateThresholds(db, { siteId, patientId, signalTypeId, value, signalType }) {
     const alerts = [];
 
-    // Find active trial rules that reference this signal type
-    const rules = db.prepare(`
-    SELECT tsr.*, t.name as trial_name, t.id as trial_id, t.recruiting_status
-    FROM trial_signal_rules tsr
-    JOIN trials t ON tsr.trial_id = t.id
-    WHERE tsr.signal_type_id = ? 
-      AND tsr.site_id = ? 
-      AND tsr.is_active = 1
-      AND t.recruiting_status = 'ACTIVE'
-  `).all(signalTypeId, siteId);
+    const { rows: rules } = await db.query(
+        `SELECT tsr.*, t.name as trial_name, t.id as trial_id, t.recruiting_status
+         FROM trial_signal_rules tsr
+         JOIN trials t ON tsr.trial_id = t.id
+         WHERE tsr.signal_type_id = $1
+           AND tsr.site_id = $2
+           AND tsr.is_active = true
+           AND t.recruiting_status = 'ACTIVE'`,
+        [signalTypeId, siteId]
+    );
 
     for (const rule of rules) {
-        const matches = evaluateRule(rule, value, signalType);
-        if (!matches) continue;
+        if (!evaluateRule(rule, value, signalType)) continue;
 
-        // Check if there's already an active screening case for this patient-trial
-        const existingCase = db.prepare(`
-      SELECT id, status FROM screening_cases 
-      WHERE patient_id = ? AND trial_id = ? AND site_id = ?
-      AND status NOT IN ('SCREEN_FAILED', 'DECLINED', 'LOST_TO_FOLLOWUP')
-    `).get(patientId, rule.trial_id, siteId);
+        const existingCase = (await db.query(
+            `SELECT id, status FROM screening_cases
+             WHERE patient_id = $1 AND trial_id = $2 AND site_id = $3
+             AND status NOT IN ('SCREEN_FAILED', 'DECLINED', 'LOST_TO_FOLLOWUP')`,
+            [patientId, rule.trial_id, siteId]
+        )).rows[0];
 
-        // Only alert if no active case, or if case is in a relevant state
         if (existingCase && existingCase.status === 'ENROLLED') continue;
 
         const dedupKey = `threshold:${patientId}:${rule.trial_id}:${signalTypeId}:${new Date().toISOString().split('T')[0]}`;
 
         try {
             const eventId = uuidv4();
-            db.prepare(`
-        INSERT INTO notification_events (id, site_id, type, patient_id, screening_case_id, payload, dedup_key)
-        VALUES (?, ?, 'THRESHOLD_CROSSED', ?, ?, ?, ?)
-      `).run(
-                eventId, siteId, patientId,
-                existingCase?.id || null,
-                JSON.stringify({
-                    signal_type: signalType.name,
-                    signal_label: signalType.label,
-                    value: value,
-                    trial_id: rule.trial_id,
-                    trial_name: rule.trial_name,
-                    operator: rule.operator,
-                    threshold: rule.threshold_number || rule.threshold_text || rule.threshold_list,
-                    has_existing_case: !!existingCase
-                }),
-                dedupKey
+            await db.query(
+                `INSERT INTO notification_events (id, site_id, type, patient_id, screening_case_id, payload, dedup_key)
+                 VALUES ($1, $2, 'THRESHOLD_CROSSED', $3, $4, $5, $6)`,
+                [eventId, siteId, patientId,
+                 existingCase?.id || null,
+                 JSON.stringify({
+                     signal_type: signalType.name,
+                     signal_label: signalType.label,
+                     value,
+                     trial_id: rule.trial_id,
+                     trial_name: rule.trial_name,
+                     operator: rule.operator,
+                     threshold: rule.threshold_number || rule.threshold_text || rule.threshold_list,
+                     has_existing_case: !!existingCase
+                 }),
+                 dedupKey]
             );
 
             alerts.push({
@@ -65,8 +58,7 @@ function evaluateThresholds(db, { siteId, patientId, signalTypeId, value, signal
                 operator: rule.operator
             });
         } catch (e) {
-            // Dedup key conflict — alert already exists for today
-            if (!e.message.includes('UNIQUE')) throw e;
+            if (e.code !== '23505') throw e; // ignore dedup violations
         }
     }
 
@@ -83,7 +75,6 @@ function evaluateRule(rule, value, signalType) {
             default: return false;
         }
     } else {
-        // STRING or ENUM
         const strVal = String(value);
         switch (rule.operator) {
             case 'EQ': return strVal === rule.threshold_text;

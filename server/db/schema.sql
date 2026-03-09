@@ -1,13 +1,13 @@
 -- Clinical Trial Screening State Tracker — Database Schema
--- SQLite-compatible, designed for Postgres migration
+-- PostgreSQL (Supabase)
 
 -- 1) Sites
 CREATE TABLE IF NOT EXISTS sites (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
   timezone TEXT NOT NULL DEFAULT 'America/Los_Angeles',
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 2) Users
@@ -19,10 +19,10 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL DEFAULT 'clerk-managed',
   role TEXT NOT NULL CHECK (role IN ('CRC', 'MANAGER', 'READONLY')) DEFAULT 'CRC',
   clerk_id TEXT,
-  is_active INTEGER NOT NULL DEFAULT 1,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
   notification_prefs TEXT DEFAULT '{}',
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(site_id, email)
 );
 CREATE INDEX IF NOT EXISTS idx_users_site ON users(site_id);
@@ -35,8 +35,8 @@ CREATE TABLE IF NOT EXISTS referral_sources (
   name TEXT NOT NULL,
   type TEXT CHECK (type IN ('PCP', 'SPECIALIST', 'OTHER')) DEFAULT 'OTHER',
   contact_info TEXT DEFAULT '{}',
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(site_id, name)
 );
 CREATE INDEX IF NOT EXISTS idx_referral_sources_site ON referral_sources(site_id);
@@ -52,8 +52,8 @@ CREATE TABLE IF NOT EXISTS patients (
   referral_source_id TEXT REFERENCES referral_sources(id),
   referral_date TEXT,
   notes TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_patients_site ON patients(site_id);
 CREATE INDEX IF NOT EXISTS idx_patients_search ON patients(site_id, last_name, dob);
@@ -70,13 +70,13 @@ CREATE TABLE IF NOT EXISTS trials (
   description TEXT,
   inclusion_criteria TEXT,
   exclusion_criteria TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_trials_site ON trials(site_id);
 CREATE INDEX IF NOT EXISTS idx_trials_status ON trials(site_id, recruiting_status);
 
--- 5b) Trial Protocols (uploaded PDF files)
+-- 5b) Trial Protocols (uploaded PDF files — stored in Supabase Storage)
 CREATE TABLE IF NOT EXISTS trial_protocols (
   id TEXT PRIMARY KEY,
   site_id TEXT NOT NULL REFERENCES sites(id),
@@ -84,11 +84,10 @@ CREATE TABLE IF NOT EXISTS trial_protocols (
   filename TEXT NOT NULL,
   mime_type TEXT NOT NULL,
   file_size INTEGER NOT NULL,
-  file_data BLOB NOT NULL,
+  storage_path TEXT NOT NULL,
   version TEXT,
   uploaded_by_user_id TEXT REFERENCES users(id),
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(trial_id, version)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_protocol_trial ON trial_protocols(trial_id);
 
@@ -100,8 +99,8 @@ CREATE TABLE IF NOT EXISTS signal_types (
   label TEXT NOT NULL,
   value_type TEXT NOT NULL CHECK (value_type IN ('NUMBER', 'STRING', 'ENUM')),
   unit TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(site_id, name)
 );
 
@@ -117,8 +116,8 @@ CREATE TABLE IF NOT EXISTS patient_signals (
   collected_at TEXT NOT NULL,
   source TEXT,
   entered_by_user_id TEXT REFERENCES users(id),
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_signals_patient ON patient_signals(site_id, patient_id);
 CREATE INDEX IF NOT EXISTS idx_signals_timeline ON patient_signals(patient_id, signal_type_id, collected_at DESC);
@@ -133,9 +132,9 @@ CREATE TABLE IF NOT EXISTS trial_signal_rules (
   threshold_number REAL,
   threshold_text TEXT,
   threshold_list TEXT,
-  is_active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_rules_trial ON trial_signal_rules(trial_id);
 CREATE INDEX IF NOT EXISTS idx_rules_trial_signal ON trial_signal_rules(trial_id, signal_type_id);
@@ -148,8 +147,8 @@ CREATE TABLE IF NOT EXISTS screen_fail_reasons (
   code TEXT NOT NULL,
   label TEXT NOT NULL,
   explanation_template TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(site_id, code)
 );
 
@@ -170,9 +169,9 @@ CREATE TABLE IF NOT EXISTS screening_cases (
   what_would_change_text TEXT,
   revisit_date TEXT,
   next_action_date TEXT,
-  last_touched_at TEXT NOT NULL DEFAULT (datetime('now')),
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  last_touched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_cases_site_status ON screening_cases(site_id, status);
 CREATE INDEX IF NOT EXISTS idx_cases_trial_status ON screening_cases(trial_id, status);
@@ -189,9 +188,9 @@ CREATE TABLE IF NOT EXISTS pending_items (
   name TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('OPEN', 'COMPLETED', 'CANCELLED')) DEFAULT 'OPEN',
   due_date TEXT,
-  completed_at TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_pending_case ON pending_items(screening_case_id);
 CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_items(site_id, status);
@@ -209,11 +208,11 @@ CREATE TABLE IF NOT EXISTS visit_templates (
   reminder_days_before INTEGER DEFAULT 3,
   notes TEXT,
   sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_visit_templates_trial ON visit_templates(trial_id);
 
--- 13) Patient Visits (actual scheduled/completed visits per enrolled patient)
+-- 13) Patient Visits
 CREATE TABLE IF NOT EXISTS patient_visits (
   id TEXT PRIMARY KEY,
   site_id TEXT NOT NULL REFERENCES sites(id),
@@ -222,10 +221,10 @@ CREATE TABLE IF NOT EXISTS patient_visits (
   scheduled_date TEXT NOT NULL,
   actual_date TEXT,
   status TEXT NOT NULL CHECK (status IN ('SCHEDULED', 'COMPLETED', 'MISSED', 'CANCELLED')) DEFAULT 'SCHEDULED',
-  reminder_sent INTEGER DEFAULT 0,
+  reminder_sent BOOLEAN DEFAULT FALSE,
   notes TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_patient_visits_case ON patient_visits(screening_case_id);
 CREATE INDEX IF NOT EXISTS idx_patient_visits_scheduled ON patient_visits(site_id, scheduled_date);
@@ -239,8 +238,8 @@ CREATE TABLE IF NOT EXISTS notification_events (
   screening_case_id TEXT REFERENCES screening_cases(id),
   payload TEXT DEFAULT '{}',
   dedup_key TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  processed_at TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  processed_at TIMESTAMPTZ,
   UNIQUE(site_id, dedup_key)
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_unprocessed ON notification_events(site_id, processed_at);
@@ -254,10 +253,10 @@ CREATE TABLE IF NOT EXISTS email_logs (
   to_email TEXT NOT NULL,
   subject TEXT NOT NULL,
   body_preview TEXT,
-  sent_at TEXT,
+  sent_at TIMESTAMPTZ,
   status TEXT NOT NULL CHECK (status IN ('QUEUED', 'SENT', 'FAILED')) DEFAULT 'QUEUED',
   error TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_email_user ON email_logs(user_id, sent_at);
 
@@ -270,11 +269,11 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   entity_id TEXT NOT NULL,
   action TEXT NOT NULL CHECK (action IN ('CREATE', 'UPDATE', 'DELETE')),
   diff TEXT DEFAULT '{}',
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_logs(site_id, entity_type, entity_id);
 
--- 17) Patient Documents (uploaded files: Fibroscan reports, labs, etc.)
+-- 17) Patient Documents (uploaded files — stored in Supabase Storage)
 CREATE TABLE IF NOT EXISTS patient_documents (
   id TEXT PRIMARY KEY,
   site_id TEXT NOT NULL REFERENCES sites(id),
@@ -282,11 +281,11 @@ CREATE TABLE IF NOT EXISTS patient_documents (
   filename TEXT NOT NULL,
   mime_type TEXT NOT NULL,
   file_size INTEGER NOT NULL,
-  file_data BLOB NOT NULL,
+  storage_path TEXT NOT NULL,
   document_type TEXT CHECK (document_type IN ('FIBROSCAN', 'LAB_REPORT', 'IMAGING', 'REFERRAL', 'CONSENT', 'OTHER')) DEFAULT 'OTHER',
   notes TEXT,
   uploaded_by_user_id TEXT REFERENCES users(id),
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_patient_docs_patient ON patient_documents(patient_id);
 CREATE INDEX IF NOT EXISTS idx_patient_docs_site ON patient_documents(site_id);
@@ -299,9 +298,9 @@ CREATE TABLE IF NOT EXISTS notes (
   title TEXT NOT NULL DEFAULT '',
   content TEXT NOT NULL DEFAULT '',
   color TEXT NOT NULL DEFAULT 'default',
-  is_pinned INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
 CREATE INDEX IF NOT EXISTS idx_notes_site ON notes(site_id, user_id);

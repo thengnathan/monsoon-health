@@ -1,17 +1,14 @@
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 require('dotenv').config();
-const { initDatabase } = require('./db/init');
+const { pool, supabase } = require('./db/init');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Initialize DB with seed data
-const db = initDatabase({ seed: true });
-
-// Make db available to routes
-app.locals.db = db;
+// Make db and supabase available to routes
+app.locals.db = pool;
+app.locals.supabase = supabase;
 
 // Middleware
 app.use(cors({ origin: ['http://localhost:5173', 'http://0.0.0.0:5173'], credentials: true }));
@@ -48,10 +45,6 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/notes', require('./routes/notes'));
 app.use('/api', require('./routes/visits'));
 
-// Start scheduler
-const { startScheduler } = require('./services/scheduler');
-startScheduler(db);
-
 // Error handler
 app.use((err, req, res, next) => {
     console.error('Unhandled error:', err);
@@ -62,9 +55,8 @@ app.listen(PORT, () => {
     console.log(`\n  ✦ Monsoon Health API running on http://localhost:${PORT}\n`);
 });
 
-// Cleanup on exit
 process.on('SIGINT', () => {
-    db.close();
+    pool.end();
     process.exit(0);
 });
 

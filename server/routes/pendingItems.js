@@ -5,30 +5,29 @@ const { authMiddleware, auditLog } = require('../middleware/auth');
 const router = express.Router();
 router.use(authMiddleware);
 
-// GET /api/pending-items (for a screening case, via query)
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
     const db = req.app.locals.db;
     const { screening_case_id, status } = req.query;
 
-    let sql = 'SELECT * FROM pending_items WHERE site_id = ?';
+    let sql = 'SELECT * FROM pending_items WHERE site_id = $1';
     const params = [req.user.site_id];
+    let p = 1;
 
     if (screening_case_id) {
-        sql += ' AND screening_case_id = ?';
+        sql += ` AND screening_case_id = $${++p}`;
         params.push(screening_case_id);
     }
     if (status) {
-        sql += ' AND status = ?';
+        sql += ` AND status = $${++p}`;
         params.push(status);
     }
 
     sql += ' ORDER BY due_date ASC, created_at ASC';
-    const items = db.prepare(sql).all(...params);
-    res.json(items);
+    const { rows } = await db.query(sql, params);
+    res.json(rows);
 });
 
-// POST /api/pending-items
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
     const db = req.app.locals.db;
     const id = uuidv4();
     const { screening_case_id, type, name, due_date } = req.body;
@@ -37,76 +36,78 @@ router.post('/', (req, res) => {
         return res.status(400).json({ error: 'screening_case_id, type, and name are required' });
     }
 
-    // Verify screening case exists
-    const sc = db.prepare('SELECT id FROM screening_cases WHERE id = ? AND site_id = ?').get(screening_case_id, req.user.site_id);
+    const sc = (await db.query(
+        'SELECT id FROM screening_cases WHERE id = $1 AND site_id = $2',
+        [screening_case_id, req.user.site_id]
+    )).rows[0];
     if (!sc) return res.status(404).json({ error: 'Screening case not found' });
 
-    db.prepare(`
-    INSERT INTO pending_items (id, site_id, screening_case_id, type, name, status, due_date)
-    VALUES (?, ?, ?, ?, ?, 'OPEN', ?)
-  `).run(id, req.user.site_id, screening_case_id, type, name, due_date || null);
+    await db.query(
+        `INSERT INTO pending_items (id, site_id, screening_case_id, type, name, status, due_date) VALUES ($1, $2, $3, $4, $5, 'OPEN', $6)`,
+        [id, req.user.site_id, screening_case_id, type, name, due_date || null]
+    );
 
-    auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'pending_item', entityId: id, action: 'CREATE', diff: req.body });
+    await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'pending_item', entityId: id, action: 'CREATE', diff: req.body });
 
-    const item = db.prepare('SELECT * FROM pending_items WHERE id = ?').get(id);
+    const item = (await db.query('SELECT * FROM pending_items WHERE id = $1', [id])).rows[0];
     res.status(201).json(item);
 });
 
-// PATCH /api/pending-items/:id
-router.patch('/:id', (req, res) => {
+router.patch('/:id', async (req, res) => {
     const db = req.app.locals.db;
-    const existing = db.prepare('SELECT * FROM pending_items WHERE id = ? AND site_id = ?').get(req.params.id, req.user.site_id);
+    const existing = (await db.query(
+        'SELECT * FROM pending_items WHERE id = $1 AND site_id = $2',
+        [req.params.id, req.user.site_id]
+    )).rows[0];
     if (!existing) return res.status(404).json({ error: 'Pending item not found' });
 
-    const fields = ['name', 'type', 'status', 'due_date'];
     const updates = [];
     const values = [];
+    let p = 0;
 
-    for (const field of fields) {
-        if (req.body[field] !== undefined) {
-            updates.push(`${field} = ?`);
-            values.push(req.body[field]);
-        }
+    for (const field of ['name', 'type', 'status', 'due_date']) {
+        if (req.body[field] !== undefined) { updates.push(`${field} = $${++p}`); values.push(req.body[field]); }
     }
 
-    // Handle completion
     if (req.body.status === 'COMPLETED' && existing.status !== 'COMPLETED') {
-        updates.push("completed_at = datetime('now')");
+        updates.push(`completed_at = NOW()`);
 
-        // Create PENDING_ITEM_COMPLETED notification
-        const sc = db.prepare('SELECT * FROM screening_cases WHERE id = ?').get(existing.screening_case_id);
+        const sc = (await db.query('SELECT * FROM screening_cases WHERE id = $1', [existing.screening_case_id])).rows[0];
         if (sc) {
             const dedupKey = `pending_complete:${existing.id}`;
             try {
-                db.prepare(`
-          INSERT INTO notification_events (id, site_id, type, patient_id, screening_case_id, payload, dedup_key)
-          VALUES (?, ?, 'PENDING_ITEM_COMPLETED', ?, ?, ?, ?)
-        `).run(uuidv4(), req.user.site_id, sc.patient_id, sc.id,
-                    JSON.stringify({ item_name: existing.name, item_type: existing.type }),
-                    dedupKey);
+                await db.query(
+                    `INSERT INTO notification_events (id, site_id, type, patient_id, screening_case_id, payload, dedup_key)
+                     VALUES ($1, $2, 'PENDING_ITEM_COMPLETED', $3, $4, $5, $6)`,
+                    [uuidv4(), req.user.site_id, sc.patient_id, sc.id,
+                     JSON.stringify({ item_name: existing.name, item_type: existing.type }),
+                     dedupKey]
+                );
             } catch (e) {
-                // Dedup - ignore unique constraint violation
+                if (e.code !== '23505') throw e; // ignore dedup violations
             }
         }
     }
 
     if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
-    updates.push("updated_at = datetime('now')");
+    updates.push(`updated_at = NOW()`);
     values.push(req.params.id, req.user.site_id);
 
-    db.prepare(`UPDATE pending_items SET ${updates.join(', ')} WHERE id = ? AND site_id = ?`).run(...values);
-    auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'pending_item', entityId: req.params.id, action: 'UPDATE', diff: req.body });
+    await db.query(`UPDATE pending_items SET ${updates.join(', ')} WHERE id = $${++p} AND site_id = $${++p}`, values);
+    await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'pending_item', entityId: req.params.id, action: 'UPDATE', diff: req.body });
 
-    const item = db.prepare('SELECT * FROM pending_items WHERE id = ?').get(req.params.id);
+    const item = (await db.query('SELECT * FROM pending_items WHERE id = $1', [req.params.id])).rows[0];
     res.json(item);
 });
 
-// DELETE /api/pending-items/:id
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
     const db = req.app.locals.db;
-    const result = db.prepare('DELETE FROM pending_items WHERE id = ? AND site_id = ?').run(req.params.id, req.user.site_id);
-    if (result.changes === 0) return res.status(404).json({ error: 'Pending item not found' });
+    const result = await db.query(
+        'DELETE FROM pending_items WHERE id = $1 AND site_id = $2',
+        [req.params.id, req.user.site_id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Pending item not found' });
     res.json({ message: 'Deleted' });
 });
 

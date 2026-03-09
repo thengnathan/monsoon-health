@@ -1,14 +1,15 @@
 -- Seed Data for Clinical Trial Screening Tracker
--- Clean slate: only system essentials (site, admin user, config)
+-- Run this once in the Supabase SQL Editor after schema creation
 
 -- Site
 INSERT INTO sites (id, name, timezone) VALUES
-  ('site-001', 'My Research Site', 'America/Los_Angeles');
+  ('site-001', 'My Research Site', 'America/Los_Angeles')
+ON CONFLICT (id) DO NOTHING;
 
--- Users (passwords are bcrypt hash of 'password123')
--- Hash will be set by seed script
+-- Admin user placeholder (Clerk auto-provisions real users on first login)
 INSERT INTO users (id, site_id, name, email, password_hash, role) VALUES
-  ('user-001', 'site-001', 'Admin User', 'admin@site.org', '$HASH$', 'MANAGER');
+  ('user-001', 'site-001', 'Admin User', 'admin@site.org', 'clerk-managed', 'MANAGER')
+ON CONFLICT (id) DO NOTHING;
 
 -- Signal Types (common clinical signals — configurable per site)
 INSERT INTO signal_types (id, site_id, name, label, value_type, unit) VALUES
@@ -21,9 +22,10 @@ INSERT INTO signal_types (id, site_id, name, label, value_type, unit) VALUES
   ('sig-007', 'site-001', 'HBSAG', 'HBsAg Status', 'ENUM', NULL),
   ('sig-008', 'site-001', 'HBV_DNA', 'HBV DNA', 'NUMBER', 'IU/mL'),
   ('sig-009', 'site-001', 'BMI', 'BMI', 'NUMBER', 'kg/m²'),
-  ('sig-010', 'site-001', 'NAS_SCORE', 'NAS Score', 'NUMBER', NULL);
+  ('sig-010', 'site-001', 'NAS_SCORE', 'NAS Score', 'NUMBER', NULL)
+ON CONFLICT (id) DO NOTHING;
 
--- Screen Fail Reasons (common reasons — configurable per site)
+-- Screen Fail Reasons
 INSERT INTO screen_fail_reasons (id, site_id, specialty, code, label, explanation_template) VALUES
   ('sfr-001', 'site-001', 'Hepatology', 'FIBROSCAN_BELOW', 'FibroScan Below Threshold',
    'FibroScan result was below the minimum threshold required for this study.'),
@@ -40,4 +42,5 @@ INSERT INTO screen_fail_reasons (id, site_id, specialty, code, label, explanatio
   ('sfr-007', 'site-001', NULL, 'SCHEDULING_CONFLICT', 'Unable to Meet Visit Schedule',
    'The patient cannot commit to the required visit schedule.'),
   ('sfr-008', 'site-001', NULL, 'OTHER', 'Other Reason',
-   'See notes for details.');
+   'See notes for details.')
+ON CONFLICT (id) DO NOTHING;
