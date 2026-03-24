@@ -179,9 +179,9 @@ export default function NotesPage() {
     const [notes, setNotes] = useState<Note[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
-    const { setFloatingNote } = useOutletContext<LayoutOutletContext>();
+    const { setFloatingNote, setNotesRefresh } = useOutletContext<LayoutOutletContext>();
 
-    const fetchNotes = async () => {
+    const fetchNotes = useCallback(async () => {
         try {
             const data = await api.getNotes();
             setNotes(data);
@@ -190,9 +190,13 @@ export default function NotesPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
-    useEffect(() => { fetchNotes(); }, []);
+    useEffect(() => {
+        fetchNotes();
+        setNotesRefresh(() => fetchNotes);
+        return () => setNotesRefresh(null);
+    }, [fetchNotes, setNotesRefresh]);
 
     const openNote = (note: Note | null) => {
         setFloatingNote(note);

@@ -14,6 +14,8 @@ import TrialDetailPage from './pages/TrialDetailPage';
 import ScreeningCasesPage from './pages/ScreeningCasesPage';
 import ScreeningCaseDetailPage from './pages/ScreeningCaseDetailPage';
 import NotesPage from './pages/NotesPage';
+import LandingPage from './pages/LandingPage';
+import AboutPage from './pages/AboutPage';
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
 
@@ -22,7 +24,7 @@ interface ThemeContextValue {
     toggle: () => void;
 }
 
-const ThemeContext = createContext<ThemeContextValue>({ theme: 'dark', toggle: () => {} });
+const ThemeContext = createContext<ThemeContextValue>({ theme: 'dark', toggle: () => { } });
 export function useTheme() { return useContext(ThemeContext); }
 
 function ThemeProvider({ children }: { children: React.ReactNode }) {
@@ -146,6 +148,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function AppRoutes() {
     return (
         <Routes>
+            <Route path="/landing" element={<LandingPage />} />
+            <Route path="/about" element={<AboutPage />} />
             <Route path="/login/*" element={<LoginPage />} />
             <Route path="/sign-up/*" element={<SignUpPage />} />
             <Route path="/" element={
@@ -160,7 +164,7 @@ function AppRoutes() {
                 <Route path="screening/:id" element={<ScreeningCaseDetailPage />} />
                 <Route path="notes" element={<NotesPage />} />
             </Route>
-            <Route path="*" element={<Navigate to="/login" />} />
+            <Route path="*" element={<Navigate to="/landing" />} />
         </Routes>
     );
 }

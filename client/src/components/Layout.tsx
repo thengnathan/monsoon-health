@@ -17,13 +17,17 @@ const navItems: NavItem[] = [
     { to: '/notes', label: 'Notes', icon: '☰' },
 ];
 
-export type LayoutOutletContext = { setFloatingNote: (note: Note | null | undefined) => void };
+export type LayoutOutletContext = {
+    setFloatingNote: (note: Note | null | undefined) => void;
+    setNotesRefresh: (fn: (() => void) | null) => void;
+};
 
 export default function Layout() {
     const { user } = useAuth();
     const { user: clerkUser } = useUser();
     const { theme, toggle } = useTheme();
     const [floatingNote, setFloatingNote] = useState<Note | null | undefined>(undefined);
+    const [notesRefresh, setNotesRefresh] = useState<(() => void) | null>(null);
 
     const displayName = clerkUser
         ? [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(' ') || user?.name || 'User'
@@ -37,10 +41,12 @@ export default function Layout() {
         } else {
             await api.createNote(data as Record<string, unknown>);
         }
+        notesRefresh?.();
     };
 
     const handleFloatingDelete = async (id: string) => {
         await api.deleteNote(id);
+        notesRefresh?.();
     };
 
     return (
@@ -104,7 +110,7 @@ export default function Layout() {
                     </button>
                 </div>
 
-                <Outlet context={{ setFloatingNote } satisfies LayoutOutletContext} />
+                <Outlet context={{ setFloatingNote, setNotesRefresh } satisfies LayoutOutletContext} />
             </main>
 
             {/* Global floating note — persists across page navigation */}
