@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Monsoon Health is a clinical trial screening state tracker designed for Clinical Research Coordinators (CRCs). It helps manage patient screening workflows for clinical trials — tracking patients, trials, screening cases, pending items, visits, and notifications. The app uses a "stormy morning" dark theme with full dark/light mode support.
+Monsoon Health is a clinical trial screening platform designed for Clinical Research Coordinators (CRCs), CROs, and Sponsors. It manages patient screening workflows — tracking patients, trials, screening cases, pending items, visits, and notifications. The app features a public-facing landing page, an About page, and a full authenticated dashboard with a "stormy morning" dark theme and dark/light mode support.
 
 ---
 
@@ -10,12 +10,12 @@ Monsoon Health is a clinical trial screening state tracker designed for Clinical
 
 | Layer | Technology |
 |-------|-----------|
-| **Frontend** | React 18.3, Vite 6, React Router 6 |
+| **Frontend** | React 18, Vite 6, React Router 6, TypeScript |
 | **Styling** | Vanilla CSS with CSS custom properties (dark/light themes) |
 | **Authentication** | Clerk (`@clerk/clerk-react` frontend, `@clerk/express` backend) |
-| **Backend** | Node.js, Express 4 |
-| **Database** | SQLite via `better-sqlite3` |
-| **File Uploads** | `multer` (protocol PDFs, patient documents) |
+| **Backend** | Node.js, Express 4, TypeScript (`ts-node-dev`) |
+| **Database** | Supabase (PostgreSQL via `pg` pool) |
+| **File Storage** | Supabase Storage (protocol PDFs, patient documents) |
 | **Scheduling** | `node-cron` (background notification jobs) |
 
 ---
@@ -23,68 +23,74 @@ Monsoon Health is a clinical trial screening state tracker designed for Clinical
 ## Project Structure
 
 ```
-Willowbark/
-├── client/                          # React frontend (Vite)
+Monsoon Health/
+├── client/                          # React frontend (Vite + TypeScript)
+│   ├── public/
+│   │   └── images/                  # Hero video/images (waves-clouds-bg.mp4)
 │   ├── .env                         # VITE_CLERK_PUBLISHABLE_KEY
 │   ├── package.json
-│   ├── vite.config.js               # Proxy /api → localhost:3001
+│   ├── vite.config.ts               # Proxy /api → localhost:3001
 │   └── src/
-│       ├── main.jsx                 # ReactDOM entry
-│       ├── App.jsx                  # ClerkProvider, ThemeProvider, Router
-│       ├── api.js                   # API client (fetch wrapper with Clerk token)
-│       ├── index.css                # All styles (~1400 lines, CSS variables)
-│       ├── utils.jsx                # StatusBadge, formatDate, isOverdue helpers
+│       ├── main.tsx                 # ReactDOM entry
+│       ├── App.tsx                  # ClerkProvider, ThemeProvider, Router
+│       ├── api.ts                   # API client (fetch wrapper with Clerk token)
+│       ├── index.css                # App styles (~1400 lines, CSS variables)
+│       ├── landing.css              # Landing & About page styles
+│       ├── utils.tsx                # StatusBadge, formatDate, isOverdue helpers
 │       ├── contexts/
-│       │   ├── AuthContext.jsx      # Maps Clerk user → internal user, token mgmt
-│       │   └── ToastContext.jsx     # Toast notification system
+│       │   ├── AuthContext.tsx      # Maps Clerk user → internal user, token mgmt
+│       │   └── ToastContext.tsx     # Toast notification system
 │       ├── components/
-│       │   ├── Layout.jsx           # Sidebar nav, UserButton, theme toggle
-│       │   └── StormyBackdrop.jsx   # Animated wave canvas for login page
+│       │   └── Layout.tsx           # Sidebar nav, UserButton, theme toggle, floating note
 │       └── pages/
-│           ├── LoginPage.jsx        # Clerk <SignIn> + StormyBackdrop
-│           ├── SignUpPage.jsx       # Clerk <SignUp> + StormyBackdrop
-│           ├── DashboardPage.jsx    # "Today" — stats, active cases, pending items
-│           ├── PatientsPage.jsx     # Patient list with search/filter/create
-│           ├── PatientDetailPage.jsx # Patient profile, signals, documents
-│           ├── TrialsPage.jsx       # Trial list with filtering
-│           ├── TrialDetailPage.jsx  # Trial config, criteria, signal rules, protocols
-│           ├── ScreeningCasesPage.jsx   # Screening case list
-│           └── ScreeningCaseDetailPage.jsx # Full case workflow, status, pending items
+│           ├── LandingPage.tsx      # Public landing page (hero, glitch title, dropdown nav)
+│           ├── AboutPage.tsx        # Public About page (editorial content, founder cards)
+│           ├── LoginPage.tsx        # Clerk <SignIn>
+│           ├── SignUpPage.tsx       # Clerk <SignUp>
+│           ├── DashboardPage.tsx    # "Today" — stats, active cases, pending items
+│           ├── PatientsPage.tsx     # Patient list with search/filter/create
+│           ├── PatientDetailPage.tsx # Patient profile, signals, documents
+│           ├── TrialsPage.tsx       # Trial list with filtering
+│           ├── TrialDetailPage.tsx  # Trial config, criteria, signal rules, protocols
+│           ├── ScreeningCasesPage.tsx       # Screening case list
+│           ├── ScreeningCaseDetailPage.tsx  # Full case workflow, status, pending items
+│           └── NotesPage.tsx        # Personal notes with floating popup, pin, color
 │
-└── server/                          # Express backend
-    ├── .env                         # CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY
+└── server/                          # Express backend (TypeScript)
+    ├── .env                         # CLERK keys, SUPABASE_URL, DATABASE_URL
     ├── package.json
-    ├── index.js                     # Express app, CORS, middleware, route mounting
-    ├── middleware/
-    │   └── auth.js                  # Clerk verifyToken, auto-provision users
-    ├── db/
-    │   ├── schema.sql               # 17 tables, all indexes
-    │   ├── seed.sql                 # Sample site + referral sources
-    │   └── init.js                  # DB initialization + seed runner
-    ├── routes/
-    │   ├── auth.js                  # GET /api/auth/me
-    │   ├── patients.js              # CRUD + document upload/download
-    │   ├── trials.js                # CRUD + protocol upload, signal rules, visits
-    │   ├── screeningCases.js        # CRUD + enrollment + visit tracking
-    │   ├── pendingItems.js          # CRUD for case pending items
-    │   ├── signals.js               # Patient signal recording
-    │   ├── signalTypes.js           # Signal type config
-    │   ├── visits.js                # Visit template CRUD + upcoming visits
-    │   ├── screenFailReasons.js     # Fail reason catalog
-    │   ├── referralSources.js       # Referral source catalog
-    │   ├── users.js                 # User listing
-    │   ├── notifications.js         # Notification events
-    │   └── today.js                 # Dashboard aggregate data
-    ├── services/
-    │   ├── notificationService.js   # Background job: check for alerts
-    │   └── scheduler.js             # node-cron setup
-    └── data/
-        └── willowbark.db            # SQLite database file (auto-created)
+    ├── src/
+    │   ├── index.ts                 # Express app, CORS, middleware, route mounting
+    │   ├── middleware/
+    │   │   └── auth.ts              # Clerk verifyToken, auto-provision users
+    │   ├── routes/
+    │   │   ├── auth.ts              # GET /api/auth/me
+    │   │   ├── patients.ts          # CRUD + document upload/download
+    │   │   ├── trials.ts            # CRUD + protocol upload, signal rules, visits
+    │   │   ├── screeningCases.ts    # CRUD + enrollment + visit tracking
+    │   │   ├── pendingItems.ts      # CRUD for case pending items
+    │   │   ├── signals.ts           # Patient signal recording
+    │   │   ├── signalTypes.ts       # Signal type config
+    │   │   ├── visits.ts            # Visit template CRUD + upcoming visits
+    │   │   ├── screenFailReasons.ts # Fail reason catalog
+    │   │   ├── referralSources.ts   # Referral source catalog
+    │   │   ├── users.ts             # User listing
+    │   │   ├── notifications.ts     # Notification events
+    │   │   ├── notes.ts             # Personal notes CRUD
+    │   │   └── today.ts             # Dashboard aggregate data
+    │   ├── services/
+    │   │   ├── notificationService.ts  # Background job: check for alerts
+    │   │   └── scheduler.ts            # node-cron setup
+    │   └── types/
+    │       └── index.ts             # Shared TypeScript types
+    └── db/
+        ├── schema.sql               # 18 tables, all indexes (run once in Supabase)
+        └── seed.sql                 # site-001, signal types, screen fail reasons
 ```
 
 ---
 
-## Database Schema (17 tables)
+## Database Schema (18 tables — Supabase PostgreSQL)
 
 ### Core Entities
 | Table | Purpose | Key Columns |
@@ -92,19 +98,19 @@ Willowbark/
 | `sites` | Multi-tenancy | `id`, `name`, `timezone` |
 | `users` | CRCs/managers | `id`, `site_id`, `name`, `email`, `role` (CRC/MANAGER/READONLY), `clerk_id` |
 | `patients` | Patient records | `id`, `site_id`, `first_name`, `last_name`, `dob`, `referral_source_id` |
-| `trials` | Clinical trials | `id`, `site_id`, `name`, `protocol_number`, `recruiting_status` (ACTIVE/PAUSED/CLOSED), `inclusion_criteria`, `exclusion_criteria` |
+| `trials` | Clinical trials | `id`, `site_id`, `name`, `protocol_number`, `recruiting_status` (ACTIVE/PAUSED/CLOSED) |
 
 ### Screening Workflow
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `screening_cases` | **Core entity** — links patient↔trial | `patient_id`, `trial_id`, `assigned_user_id`, `status` (NEW→IN_REVIEW→ENROLLED etc), `fail_reason_id`, `revisit_date` |
-| `pending_items` | Checklist items per case | `screening_case_id`, `type` (LAB/IMAGING/RECORDS/PROCEDURE/CONSULT), `status` (OPEN/COMPLETED/CANCELLED), `due_date` |
+| `screening_cases` | **Core entity** — links patient↔trial | `patient_id`, `trial_id`, `assigned_user_id`, `status`, `fail_reason_id`, `revisit_date` |
+| `pending_items` | Checklist items per case | `screening_case_id`, `type` (LAB/IMAGING/RECORDS/PROCEDURE/CONSULT), `status`, `due_date` |
 | `screen_fail_reasons` | Catalog of why patients fail | `code`, `label`, `explanation_template` |
 
 ### Signals & Rules
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `signal_types` | Signal definitions (e.g. "HbA1c") | `name`, `label`, `value_type` (NUMBER/STRING/ENUM), `unit` |
+| `signal_types` | Signal definitions (e.g. "FibroScan") | `name`, `label`, `value_type` (NUMBER/STRING/ENUM), `unit` |
 | `patient_signals` | Time-series signal values | `patient_id`, `signal_type_id`, `value_number`, `collected_at` |
 | `trial_signal_rules` | Auto-match thresholds per trial | `trial_id`, `signal_type_id`, `operator` (GTE/LTE/EQ/IN), `threshold_number` |
 
@@ -112,18 +118,23 @@ Willowbark/
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
 | `visit_templates` | Visit schedule blueprint per trial | `trial_id`, `visit_name`, `day_offset`, `window_before/after` |
-| `patient_visits` | Actual scheduled visits for enrolled patients | `screening_case_id`, `visit_template_id`, `scheduled_date`, `status` |
+| `patient_visits` | Actual scheduled visits | `screening_case_id`, `visit_template_id`, `scheduled_date`, `status` |
 
 ### Documents & Files
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `trial_protocols` | Uploaded protocol PDFs | `trial_id`, `filename`, `file_data` (BLOB) |
-| `patient_documents` | Patient files (labs, Fibroscan) | `patient_id`, `document_type`, `file_data` (BLOB) |
+| `trial_protocols` | Uploaded protocol PDFs | `trial_id`, `filename`, `storage_path` (Supabase Storage) |
+| `patient_documents` | Patient files (labs, imaging) | `patient_id`, `document_type`, `storage_path` (Supabase Storage) |
+
+### Notes
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `notes` | Personal user notes | `user_id`, `title`, `content`, `color`, `is_pinned` |
 
 ### Notifications & Audit
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `notification_events` | System alerts | `type` (REVISIT_DUE/THRESHOLD_CROSSED/etc), `screening_case_id`, `payload`, `dedup_key` |
+| `notification_events` | System alerts | `type` (REVISIT_DUE/THRESHOLD_CROSSED/etc), `screening_case_id`, `dedup_key` |
 | `email_logs` | Email delivery tracking | `user_id`, `event_id`, `status` (QUEUED/SENT/FAILED) |
 | `audit_logs` | Change tracking | `entity_type`, `entity_id`, `action` (CREATE/UPDATE/DELETE), `diff` |
 
@@ -141,17 +152,16 @@ NEW → IN_REVIEW → PENDING_INFO → LIKELY_ELIGIBLE → ENROLLED
 ## Authentication Flow
 
 **Frontend (Clerk React):**
-1. `App.jsx` wraps everything in `<ClerkProvider>` with theme-aware appearance
-2. `LoginPage.jsx` renders `<SignIn routing="path" path="/login" />`
-3. `SignUpPage.jsx` renders `<SignUp routing="path" path="/sign-up" />`
-4. `AuthContext.jsx` calls `getToken()` from Clerk, stores in `localStorage` as `monsoon_clerk_token`
-5. `api.js` reads `monsoon_clerk_token` and sends as `Authorization: Bearer <token>` header
+1. `App.tsx` wraps everything in `<ClerkProvider>` with theme-aware appearance
+2. `LoginPage.tsx` renders Clerk `<SignIn>`
+3. `AuthContext.tsx` calls `getToken()` from Clerk, stores in `localStorage` as `monsoon_clerk_token`
+4. `api.ts` reads `monsoon_clerk_token` and sends as `Authorization: Bearer <token>` header
 
 **Backend (Clerk Express):**
-1. `middleware/auth.js` uses `verifyToken(token, { secretKey })` from `@clerk/express` to verify the Bearer token
+1. `middleware/auth.ts` uses `verifyToken(token, { secretKey })` to verify the Bearer token
 2. Extracts `payload.sub` (Clerk user ID)
-3. Looks up internal user by `clerk_id` column
-4. If not found → auto-provisions a new internal user (role: CRC)
+3. Looks up internal user by `clerk_id`
+4. If not found → auto-provisions a new internal user (role: CRC, site: site-001)
 5. Sets `req.user` with internal user data for route handlers
 
 **Environment Variables:**
@@ -162,6 +172,9 @@ VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
 # server/.env
 CLERK_SECRET_KEY=sk_test_...
 CLERK_PUBLISHABLE_KEY=pk_test_...
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_...
+DATABASE_URL=postgresql://postgres:...@db.xxx.supabase.co:5432/postgres
 ```
 
 ---
@@ -191,43 +204,46 @@ All routes are prefixed with `/api` and require authentication (Bearer token).
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/trials` | List trials (supports `?recruiting_status=`) |
-| GET | `/api/trials/:id` | Get trial detail (includes criteria, rules, protocols) |
+| GET | `/api/trials/:id` | Get trial detail |
 | POST | `/api/trials` | Create trial |
 | PATCH | `/api/trials/:id` | Update trial |
-| GET | `/api/trials/:id/signal-rules` | Get signal threshold rules |
-| POST | `/api/trials/:id/signal-rules` | Create signal rule |
+| GET/POST | `/api/trials/:id/signal-rules` | Get/create signal threshold rules |
 | DELETE | `/api/trials/signal-rules/:id` | Delete signal rule |
-| POST | `/api/trials/:id/protocol` | Upload protocol PDF (multipart) |
+| POST | `/api/trials/:id/protocol` | Upload protocol PDF |
 | GET | `/api/trials/:id/protocol/download` | Download protocol |
 | DELETE | `/api/trials/:id/protocol` | Delete protocol |
-| GET | `/api/trials/:id/visit-templates` | Get visit schedule templates |
-| POST | `/api/trials/:id/visit-templates` | Create visit template |
+| GET/POST | `/api/trials/:id/visit-templates` | Get/create visit templates |
 
 ### Screening Cases
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/screening-cases` | List cases (supports `?status=`, `?trial_id=`, `?patient_id=`) |
-| GET | `/api/screening-cases/:id` | Get case detail (includes pending items, signals, visits) |
-| POST | `/api/screening-cases` | Create case (links patient→trial) |
+| GET | `/api/screening-cases/:id` | Get case detail |
+| POST | `/api/screening-cases` | Create case |
 | PATCH | `/api/screening-cases/:id` | Update case status, assignment, notes |
-| POST | `/api/screening-cases/:id/enroll` | Enroll patient (creates scheduled visits from templates) |
-| GET | `/api/screening-cases/:id/visits` | Get case's patient visits |
+| POST | `/api/screening-cases/:id/enroll` | Enroll patient (creates scheduled visits) |
+| GET | `/api/screening-cases/:id/visits` | Get case visits |
+
+### Notes
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/notes` | List user's notes |
+| POST | `/api/notes` | Create note |
+| PATCH | `/api/notes/:id` | Update note |
+| DELETE | `/api/notes/:id` | Delete note |
 
 ### Other Resources
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/today` | Dashboard aggregate: stats, active cases, pending items, revisits, alerts |
-| GET | `/api/upcoming-visits` | Visits scheduled in next 7 days |
+| GET | `/api/upcoming-visits` | Visits in next 7 days |
 | GET | `/api/users` | List all active users |
-| GET | `/api/signal-types` | List signal type definitions |
-| POST | `/api/signal-types` | Create signal type |
-| GET | `/api/signals/patient/:id` | Get patient's signal history |
-| POST | `/api/signals/patient/:id` | Record a signal value |
+| GET/POST | `/api/signal-types` | List/create signal type definitions |
+| GET/POST | `/api/signals/patient/:id` | Get/record patient signals |
 | GET/POST | `/api/pending-items` | List/create pending items |
 | PATCH/DELETE | `/api/pending-items/:id` | Update/delete pending item |
 | GET | `/api/screen-fail-reasons` | List screen fail reason catalog |
-| GET | `/api/referral-sources` | List referral sources |
-| POST | `/api/referral-sources` | Create referral source |
+| GET/POST | `/api/referral-sources` | List/create referral sources |
 | GET | `/api/notifications` | List notification events |
 | PATCH/DELETE | `/api/visit-templates/:id` | Update/delete visit template |
 | PATCH | `/api/patient-visits/:id` | Update visit status |
@@ -236,42 +252,52 @@ All routes are prefixed with `/api` and require authentication (Bearer token).
 
 ## Frontend Architecture
 
+### Routing
+| Path | Component | Auth Required |
+|------|-----------|---------------|
+| `/landing` | `LandingPage` | No |
+| `/about` | `AboutPage` | No |
+| `/login` | `LoginPage` | No |
+| `/sign-up` | `SignUpPage` | No |
+| `/` | `DashboardPage` | Yes |
+| `/patients` | `PatientsPage` | Yes |
+| `/patients/:id` | `PatientDetailPage` | Yes |
+| `/trials` | `TrialsPage` | Yes |
+| `/trials/:id` | `TrialDetailPage` | Yes |
+| `/screening` | `ScreeningCasesPage` | Yes |
+| `/screening/:id` | `ScreeningCaseDetailPage` | Yes |
+| `/notes` | `NotesPage` | Yes |
+
 ### Theming System
-- `ThemeProvider` in `App.jsx` manages dark/light mode via `ThemeContext`
+- `ThemeProvider` in `App.tsx` manages dark/light mode via `ThemeContext`
 - CSS uses `[data-theme="dark"]` and `[data-theme="light"]` attribute selectors
-- All colors use CSS variables (e.g., `--bg-primary`, `--text-primary`, `--accent`)
-- Clerk appearance is dynamically generated via `getClerkAppearance(theme)` function
-- Toggle switch in `Layout.jsx` sidebar
+- All colors use CSS variables (e.g., `--bg-root`, `--text-primary`, `--accent`)
+- Clerk appearance is dynamically generated via `getClerkAppearance(theme)`
+- Toggle in `Layout.tsx` sidebar
 
-### Color Palette (Dark Mode — "Stormy Morning")
+### Design Tokens (Dark Mode — "Stormy Morning")
 ```
---bg-primary:    #0f1923    (deep navy)
---bg-surface:    #1a2530    (card background)
---bg-elevated:   #243040    (hover states)
---text-primary:  #e4edf5    (main text)
---text-secondary:#9ab0c4    (muted text)
---text-tertiary: #6a89a7    (labels)
---accent:        #88BDDF    (interactive elements)
---border-default:rgba(106, 137, 167, 0.12)
+--bg-root:         #1a2530
+--bg-surface:      #212f3b
+--bg-surface-raised: #283846
+--text-primary:    #e4edf5
+--text-secondary:  #9ab0c4
+--text-tertiary:   #6A89A7
+--accent:          #88BDDF
+--accent-hover:    #BDDDFC
 ```
 
-### Key Frontend Patterns
-1. **API Client** (`api.js`): Centralized `request()` function that auto-attaches Clerk Bearer token from localStorage
-2. **AuthContext**: Bridges Clerk authentication with internal user profile — calls `/api/auth/me` after Clerk sign-in, keeps token fresh via 50s interval
-3. **Page Pattern**: Each page uses `useState` + `useEffect` to fetch data from `api.*` methods, with loading spinners and empty states
-4. **Route Protection**: `ProtectedRoute` component checks Clerk `isSignedIn` and internal user loading state
-5. **Toast Notifications**: `ToastContext` for success/error messages across pages
+### Landing Page Design
+- Hero background: video (`waves-clouds-bg.mp4`) with dark overlay
+- Title: "Monsoon Health" in Friz Quadrata Std with CSS glitch animation
+- Typing animation cycling between two phrases (2.5s hold, 35–55ms per character)
+- Navbar: brand left, Products/Company dropdowns centered, "Schedule a Demo" CTA right
+- Dropdowns: fade-in with translateY -8px→0, 150ms close delay, one open at a time
 
-### Pages & Their Data Sources
-| Page | API Calls | Description |
-|------|-----------|-------------|
-| DashboardPage | `getToday()`, `getUpcomingVisits()` | Aggregated stats, active cases, pending items, revisits, alerts |
-| PatientsPage | `getPatients()`, `getReferralSources()` | Searchable/filterable patient list, create modal |
-| PatientDetailPage | `getPatient(id)`, patient signals, documents | Full patient profile with signal chart, document uploads |
-| TrialsPage | `getTrials()` | Trial list with status filters |
-| TrialDetailPage | `getTrial(id)`, signal rules, protocols, visits | Trial config, criteria editing, protocol upload, visit schedule |
-| ScreeningCasesPage | `getScreeningCases()` | Case list with status/trial filters |
-| ScreeningCaseDetailPage | `getScreeningCase(id)`, pending items, visits | Full case workflow with status changes, pending items, enrollment |
+### Notes Feature
+- Floating draggable popup (`NotePopup`) shared between `NotesPage` and `Layout`
+- Notes support title, content, 6 color themes, pin-to-top
+- `Layout` handles API calls; `NotesPage` registers a `fetchNotes` refresh callback via outlet context so the list updates immediately on save/delete
 
 ---
 
@@ -281,50 +307,54 @@ All routes are prefixed with `/api` and require authentication (Bearer token).
 # Terminal 1 — Backend
 cd server
 npm install
-node index.js
+npm run dev
 # → http://localhost:3001
 
 # Terminal 2 — Frontend
 cd client
 npm install
-npx vite --port 5173 --host 0.0.0.0
+npm run dev
 # → http://localhost:5173
 ```
 
-The Vite dev server proxies `/api` requests to `localhost:3001` (configured in `vite.config.js`).
+The Vite dev server proxies `/api` requests to `localhost:3001` (configured in `vite.config.ts`).
 
-The database auto-creates and seeds on first run (`server/db/init.js`).
+### First-time Supabase setup
+1. Go to Supabase dashboard → SQL Editor
+2. Run `server/db/schema.sql` (creates all 18 tables)
+3. Run `server/db/seed.sql` (creates site-001, signal types, screen fail reasons)
+4. Your user is auto-provisioned on first login via Clerk
 
 ---
 
 ## Key Design Decisions
 
-1. **SQLite for simplicity**: Single-file DB, no setup. Schema designed for easy Postgres migration.
+1. **Supabase (PostgreSQL)**: Hosted database with connection pooling. Schema is fully normalized with FK constraints.
 2. **Multi-tenant by site_id**: Every table has `site_id`. All queries are scoped to the user's site.
-3. **Clerk for auth**: No custom password handling. Clerk handles sign-in/sign-up/MFA. Backend verifies tokens with `verifyToken()`.
-4. **Auto-provisioning**: First Clerk login auto-creates an internal user record (role: CRC).
+3. **Clerk for auth**: No custom password handling. Backend verifies tokens with `verifyToken()`, auto-provisions users on first login.
+4. **Supabase Storage for files**: Protocol PDFs and patient documents stored in Supabase Storage buckets (not database BLOBs).
 5. **Signal-based matching**: Trials define threshold rules. When a patient's signal crosses a threshold, a `THRESHOLD_CROSSED` notification is generated.
-6. **BLOBs for files**: Protocol PDFs and patient documents stored directly in SQLite as BLOBs (fine for small scale).
-7. **Background scheduler**: `node-cron` runs periodic checks for revisit-due dates and visit reminders.
+6. **Background scheduler**: `node-cron` runs periodic checks for revisit-due dates and visit reminders.
+7. **TypeScript throughout**: Both client and server are fully typed.
 
 ---
 
 ## How to Add a New Feature
 
 ### Adding a new API endpoint
-1. Create/edit route file in `server/routes/`
+1. Create/edit route file in `server/src/routes/`
 2. Use `authMiddleware` to protect it
-3. Access DB via `req.app.locals.db`
-4. Mount in `server/index.js` under `/api`
+3. Access DB via `req.app.locals.db` (pg Pool)
+4. Mount in `server/src/index.ts` under `/api`
 
 ### Adding a new page
 1. Create page component in `client/src/pages/`
-2. Add API methods to `client/src/api.js`
-3. Add route in `App.jsx` inside the protected `<Route path="/">`
-4. Add nav link in `Layout.jsx` `navItems` array
+2. Add API methods to `client/src/api.ts`
+3. Add route in `App.tsx` (protected or public)
+4. Add nav link in `Layout.tsx` `navItems` array if it's an app page
 5. Style using existing CSS variables from `index.css`
 
 ### Adding a new DB table
 1. Add `CREATE TABLE` to `server/db/schema.sql`
 2. Add seed data to `server/db/seed.sql` if needed
-3. Delete `server/data/willowbark.db` and restart server to re-create
+3. Run the SQL in Supabase SQL Editor
