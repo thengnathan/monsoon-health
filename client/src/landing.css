@@ -864,7 +864,7 @@
 
 .editorial-headline {
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
-    font-size: clamp(1.6rem, 2.5vw, 2.2rem);
+    font-size: clamp(2rem, 3.5vw, 3rem);
     font-weight: 700;
     color: #dce8f0;
     line-height: 1.25;
@@ -879,7 +879,7 @@
 
 .editorial-body p {
     font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-size: 0.975rem;
+    font-size: 1.15rem;
     color: #e4edf5;
     line-height: 1.75;
     max-width: 600px;
@@ -892,7 +892,7 @@
 
 .editorial-mission p {
     font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-size: 0.95rem;
+    font-size: 1.1rem;
     color: #c8daea;
     line-height: 1.8;
     max-width: 600px;
@@ -901,7 +901,7 @@
 
 .editorial-tagline {
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
-    font-size: clamp(1rem, 1.5vw, 1.2rem);
+    font-size: clamp(1.2rem, 2vw, 1.5rem);
     color: #dce8f0;
     line-height: 1.5;
     font-weight: 600;
@@ -921,17 +921,55 @@
 .about-editorial {
     padding: 0 8% 5rem;
     max-width: 1200px;
-    margin: 0 auto;
+    margin: -8rem auto 0;
     display: flex;
     flex-direction: column;
     gap: 1.6rem;
+    position: relative;
+    z-index: 1;
+}
+
+/* ── Scroll Animations ────────────────────────────────────── */
+.scroll-animate {
+    opacity: 0;
+    transition: opacity 0.7s ease, transform 0.7s ease;
+}
+
+.scroll-fade-up {
+    transform: translateY(36px);
+}
+
+.scroll-animate.scroll-visible {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 /* ── About Hero ───────────────────────────────────────────── */
 .about-hero {
-    padding: 160px 8% 60px;
-    max-width: 1200px;
-    margin: 0 auto;
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+    padding: 0;
+    margin: 0;
+    max-width: none;
+}
+
+.about-hero-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center center;
+    display: block;
+}
+
+.about-hero-fade {
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(to bottom, #0a141e 0%, transparent 20%, transparent 60%, #0a141e 100%),
+        linear-gradient(to right, #0a141e 0%, transparent 15%, transparent 85%, #0a141e 100%);
+    pointer-events: none;
 }
 
 .about-hero-heading {
@@ -952,8 +990,8 @@
 
 /* ── Team Section ─────────────────────────────────────────── */
 .landing-team {
-    padding: 0 8% 8rem;
-    max-width: 1200px;
+    padding: 0 15% 8rem;
+    max-width: 100%;
     margin: 0 auto;
 }
 
@@ -964,17 +1002,20 @@
     color: #dce8f0;
     letter-spacing: -0.01em;
     margin-bottom: 0.6rem;
+    padding-left: 2%;
 }
 
 .team-subtitle {
     font-size: 1rem;
     color: var(--lp-text-muted);
     margin-bottom: 3rem;
+    padding-left: 2%;
 }
 
 .team-cards {
     display: flex;
     gap: 1.5rem;
+    align-items: stretch;
 }
 
 .founder-card {
@@ -982,42 +1023,54 @@
     background: rgba(20, 32, 44, 0.6);
     border: 1px solid rgba(136, 189, 223, 0.1);
     border-radius: 14px;
-    padding: 2rem;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
 }
 
 .founder-card-top {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    background: rgba(10, 20, 30, 0.8);
 }
 
 .founder-photo {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
+    width: 100%;
+    height: 100%;
     object-fit: cover;
-    flex-shrink: 0;
-    border: 2px solid rgba(136, 189, 223, 0.2);
+    object-position: center top;
+    display: block;
+    border-radius: 0;
+    border: none;
+}
+
+.founder-card-info {
+    padding: 1.5rem 1.75rem 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    flex: 1;
 }
 
 .founder-name {
-    font-size: 1rem;
+    font-size: 1.25rem;
     font-weight: 700;
     color: #e4edf5;
     letter-spacing: -0.01em;
 }
 
 .founder-title {
-    font-size: 0.85rem;
-    color: var(--lp-text-muted);
-    margin-top: 0.2rem;
+    font-size: 0.9rem;
+    color: var(--lp-accent);
+    margin-top: -0.4rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
 }
 
 .founder-bio {
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     color: #c0d4e4;
     line-height: 1.75;
 }

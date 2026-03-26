@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { pool, supabase } from './db/init';
+import { isOllamaRunning, ollamaChat } from './services/ollama';
 
 import authRouter from './routes/auth';
 import patientsRouter from './routes/patients';
@@ -28,6 +29,10 @@ app.locals.supabase = supabase;
 // Middleware
 app.use(cors({ origin: ['http://localhost:5173', 'http://0.0.0.0:5173'], credentials: true }));
 app.use(express.json({ limit: '5mb' }));
+app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setTimeout(300000); // 5 min — needed for local LLM calls
+    next();
+});
 
 // Request logging (minimal)
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -43,6 +48,25 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 // Health check
 app.get('/health', (_req: Request, res: Response) => res.json({ status: 'ok', ts: new Date().toISOString() }));
+
+// Ollama health + test
+app.get('/api/ai/health', async (_req: Request, res: Response) => {
+    const running = await isOllamaRunning();
+    res.json({ ollama: running, model: process.env.OLLAMA_MODEL || 'qwen3.5' });
+});
+
+app.post('/api/ai/test', async (req: Request, res: Response) => {
+    req.setTimeout(300000); // 5 min timeout for LLM calls
+    res.setTimeout(300000);
+    try {
+        const { prompt } = req.body;
+        if (!prompt) return res.status(400).json({ error: 'prompt required' });
+        const result = await ollamaChat(prompt);
+        res.json({ result });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 // Routes
 app.use('/api/auth', authRouter);

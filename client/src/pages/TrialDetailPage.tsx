@@ -26,6 +26,55 @@ interface SignalForm {
     unit: string;
 }
 
+function CriteriaList({ text, color }: { text: string; color: string }) {
+    // Parse lines into top-level items and sub-items (a. b. c. or i. ii.)
+    type CriterionItem = { label: string; text: string; sub: { label: string; text: string }[] };
+    const items: CriterionItem[] = [];
+
+    text.split('\n').forEach(raw => {
+        const line = raw.trim();
+        if (!line || line.length < 3) return;
+
+        // Sub-item: starts with a letter+dot/paren or roman numeral
+        const subMatch = line.match(/^([a-z]{1,3}[.)]\s*|[ivxlc]+[.)]\s*)/i);
+        const topMatch = line.match(/^(\d+[.)]\s*)/);
+
+        if (subMatch && items.length > 0) {
+            const label = subMatch[1].trim();
+            const content = line.slice(subMatch[1].length).trim();
+            items[items.length - 1].sub.push({ label, text: content });
+        } else if (topMatch) {
+            const content = line.slice(topMatch[1].length).trim();
+            items.push({ label: String(items.length + 1), text: content, sub: [] });
+        } else {
+            items.push({ label: String(items.length + 1), text: line, sub: [] });
+        }
+    });
+
+    return (
+        <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {items.map((item, i) => (
+                <li key={i}>
+                    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start', fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                        <span style={{ minWidth: 22, height: 22, borderRadius: '50%', background: `color-mix(in srgb, ${color} 15%, transparent)`, color, fontSize: '0.7rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{i + 1}</span>
+                        <span>{item.text}</span>
+                    </div>
+                    {item.sub.length > 0 && (
+                        <ol style={{ listStyle: 'none', padding: '0.4rem 0 0 2.5rem', margin: 0, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                            {item.sub.map((sub, j) => (
+                                <li key={j} style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                                    <span style={{ minWidth: 18, height: 18, borderRadius: '3px', background: `color-mix(in srgb, ${color} 10%, transparent)`, color, fontSize: '0.65rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>{String.fromCharCode(97 + j)}</span>
+                                    <span>{sub.text}</span>
+                                </li>
+                            ))}
+                        </ol>
+                    )}
+                </li>
+            ))}
+        </ol>
+    );
+}
+
 export default function TrialDetailPage() {
     const { id } = useParams<{ id: string }>();
     const [trial, setTrial] = useState<TrialDetail | null>(null);
@@ -233,13 +282,13 @@ export default function TrialDetailPage() {
                                         {trial.inclusion_criteria && (
                                             <div className="card">
                                                 <div className="card-header"><div className="card-title" style={{ color: 'var(--success)', fontSize: 'var(--font-sm)' }}>✓ Inclusion Criteria</div></div>
-                                                <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: 'var(--leading-relaxed)' }}>{trial.inclusion_criteria}</div>
+                                                <CriteriaList text={trial.inclusion_criteria} color="var(--success)" />
                                             </div>
                                         )}
                                         {trial.exclusion_criteria && (
                                             <div className="card">
                                                 <div className="card-header"><div className="card-title" style={{ color: 'var(--error)', fontSize: 'var(--font-sm)' }}>✕ Exclusion Criteria</div></div>
-                                                <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: 'var(--leading-relaxed)' }}>{trial.exclusion_criteria}</div>
+                                                <CriteriaList text={trial.exclusion_criteria} color="var(--error)" />
                                             </div>
                                         )}
                                     </div>

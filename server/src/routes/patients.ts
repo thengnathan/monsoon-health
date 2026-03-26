@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import pdfParse from 'pdf-parse';
 import { authMiddleware, auditLog } from '../middleware/auth';
+import { extractPatientDocumentData } from '../services/aiIngestion';
 
 const router = Router();
 router.use(authMiddleware);
@@ -145,10 +146,28 @@ router.post('/upload-document', upload.single('file'), async (req: Request, res:
         const documentType = (req.body as { document_type?: string }).document_type || 'OTHER';
         let extracted: ExtractedInfo = {};
 
+        let rawExtractedData: string | null = null;
+
         if (req.file.mimetype === 'application/pdf') {
             try {
                 const pdfData = await pdfParse(req.file.buffer);
+                // Regex fallback for basic fields
                 extracted = extractPatientInfo(pdfData.text);
+                // LLM full extraction (comprehensive)
+                console.log('[Document] Running AI extraction...');
+                const aiExtracted = await extractPatientDocumentData(pdfData.text);
+                rawExtractedData = JSON.stringify(aiExtracted);
+                // Merge AI results into extracted (AI takes precedence for richer data)
+                if (aiExtracted.first_name) extracted.first_name = aiExtracted.first_name;
+                if (aiExtracted.last_name) extracted.last_name = aiExtracted.last_name;
+                if (aiExtracted.dob) extracted.dob = aiExtracted.dob;
+                if (aiExtracted.internal_identifier) extracted.internal_identifier = aiExtracted.internal_identifier;
+                if (aiExtracted.fibroscan_kpa) extracted.fibroscan_kpa = aiExtracted.fibroscan_kpa;
+                if (aiExtracted.alt) extracted.alt = aiExtracted.alt;
+                if (aiExtracted.ast) extracted.ast = aiExtracted.ast;
+                if (aiExtracted.platelets) extracted.platelets = aiExtracted.platelets;
+                if (aiExtracted.bmi) extracted.bmi = aiExtracted.bmi;
+                console.log('[Document] AI extraction complete');
             } catch (e) {
                 const err = e as Error;
                 console.log('[Document] PDF parse warning:', err.message);
@@ -195,9 +214,9 @@ router.post('/upload-document', upload.single('file'), async (req: Request, res:
         if (uploadError) throw uploadError;
 
         await db.query(
-            `INSERT INTO patient_documents (id, site_id, patient_id, filename, mime_type, file_size, storage_path, document_type, uploaded_by_user_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-            [docId, req.user.site_id, finalPatientId, req.file.originalname, req.file.mimetype, req.file.size, storagePath, documentType, req.user.id]
+            `INSERT INTO patient_documents (id, site_id, patient_id, filename, mime_type, file_size, storage_path, document_type, uploaded_by_user_id, raw_extracted_data)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            [docId, req.user.site_id, finalPatientId, req.file.originalname, req.file.mimetype, req.file.size, storagePath, documentType, req.user.id, rawExtractedData]
         );
 
         const signalMap: Record<string, string> = { fibroscan_kpa: 'sig-001', alt: 'sig-004', ast: 'sig-005', platelets: 'sig-003', bmi: 'sig-009' };
@@ -262,6 +281,23 @@ router.delete('/:id/documents/:docId', async (req: Request, res: Response) => {
     await supabase.storage.from('patient-documents').remove([doc.storage_path]);
     await db.query('DELETE FROM patient_documents WHERE id = $1', [req.params.docId]);
     res.json({ message: 'Document deleted' });
+});
+
+router.get('/:id/protocol-signals', async (req: Request, res: Response) => {
+    const db = req.app.locals.db;
+    const { rows } = await db.query(
+        `SELECT pps.*, t.name as trial_name, t.protocol_number, t.indication, t.specialty
+         FROM patient_protocol_signals pps
+         JOIN trials t ON pps.trial_id = t.id
+         WHERE pps.patient_id = $1 AND pps.site_id = $2
+         ORDER BY pps.last_evaluated_at DESC`,
+        [req.params.id, req.user.site_id]
+    );
+    res.json(rows.map(r => ({
+        ...r,
+        criteria_breakdown: JSON.parse((r.criteria_breakdown as string) || '[]'),
+        missing_data: JSON.parse((r.missing_data as string) || '[]'),
+    })));
 });
 
 router.get('/:id', async (req: Request, res: Response) => {

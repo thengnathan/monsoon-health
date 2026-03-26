@@ -3,6 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import pdfParse from 'pdf-parse';
 import { authMiddleware, requireRole, auditLog } from '../middleware/auth';
+import { extractProtocolData, cleanPdfText } from '../services/aiIngestion';
+import { runProtocolMatching } from '../services/patientMatching';
 
 function extractCriteria(text: string): { inclusion: string | null; exclusion: string | null } {
     const result = { inclusion: null as string | null, exclusion: null as string | null };
@@ -186,31 +188,63 @@ router.post('/:id/protocol', requireRole('MANAGER', 'CRC'), upload.single('file'
 
         await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'trial_protocol', entityId: id, action: 'CREATE', diff: { filename: req.file.originalname, size: req.file.size } as Record<string, unknown> });
 
-        let extracted = { inclusion: null as string | null, exclusion: null as string | null };
-        try {
-            const pdfData = await pdfParse(req.file.buffer);
-            extracted = extractCriteria(pdfData.text);
-            if (extracted.inclusion || extracted.exclusion) {
-                const criteriaUpdates: string[] = [];
-                const criteriaVals: unknown[] = [];
-                let cp = 0;
-                if (extracted.inclusion && !trial.inclusion_criteria) { criteriaUpdates.push(`inclusion_criteria = $${++cp}`); criteriaVals.push(extracted.inclusion); }
-                if (extracted.exclusion && !trial.exclusion_criteria) { criteriaUpdates.push(`exclusion_criteria = $${++cp}`); criteriaVals.push(extracted.exclusion); }
-                if (criteriaUpdates.length > 0) {
-                    criteriaVals.push(req.params.id, req.user.site_id);
-                    await db.query(`UPDATE trials SET ${criteriaUpdates.join(', ')}, updated_at = NOW() WHERE id = $${++cp} AND site_id = $${++cp}`, criteriaVals);
-                }
-            }
-        } catch (parseErr) {
-            const err = parseErr as Error;
-            console.log('[Protocol] PDF parse warning:', err.message);
-        }
-
+        // Respond immediately — AI extraction runs in background
         res.status(201).json({
             id, filename: req.file.originalname, file_size: req.file.size, version,
             created_at: new Date().toISOString(),
-            auto_extracted: { inclusion_criteria: !!extracted.inclusion, exclusion_criteria: !!extracted.exclusion }
+            ai_extraction: 'processing'
         });
+
+        // Background: AI extraction + patient matching
+        const fileBuffer = req.file.buffer;
+        const trialId = req.params.id;
+        const siteId = req.user.site_id;
+        const userId = req.user.id;
+
+        (async () => {
+            try {
+                const pdfData = await pdfParse(fileBuffer);
+                const cleanedText = cleanPdfText(pdfData.text);
+                const regexExtracted = extractCriteria(cleanedText);
+
+                console.log('[Protocol] Running AI extraction...');
+                const aiExtracted = await extractProtocolData(cleanedText);
+                console.log('[Protocol] AI extraction complete —', aiExtracted.inclusion_criteria.length, 'inclusion,', aiExtracted.exclusion_criteria.length, 'exclusion criteria found');
+
+                const criteriaUpdates: string[] = [];
+                const criteriaVals: unknown[] = [];
+                let cp = 0;
+
+                // Always overwrite with AI results (best available data)
+                const inclusionText = aiExtracted.raw_inclusion_text || regexExtracted.inclusion;
+                const exclusionText = aiExtracted.raw_exclusion_text || regexExtracted.exclusion;
+
+                if (inclusionText) { criteriaUpdates.push(`inclusion_criteria = $${++cp}`); criteriaVals.push(inclusionText); }
+                if (exclusionText) { criteriaUpdates.push(`exclusion_criteria = $${++cp}`); criteriaVals.push(exclusionText); }
+                if (aiExtracted.specialty) { criteriaUpdates.push(`specialty = $${++cp}`); criteriaVals.push(aiExtracted.specialty); }
+                if (aiExtracted.description || aiExtracted.primary_endpoint) {
+                    criteriaUpdates.push(`description = $${++cp}`);
+                    criteriaVals.push([aiExtracted.indication, aiExtracted.primary_endpoint].filter(Boolean).join(' — '));
+                }
+
+                criteriaUpdates.push(`extracted_criteria_json = $${++cp}`);
+                criteriaVals.push(JSON.stringify(aiExtracted));
+
+                criteriaVals.push(trialId, siteId);
+                await db.query(
+                    `UPDATE trials SET ${criteriaUpdates.join(', ')}, updated_at = NOW() WHERE id = $${++cp} AND site_id = $${++cp}`,
+                    criteriaVals
+                );
+                console.log('[Protocol] Trial updated with extracted criteria');
+
+                // Now run patient matching
+                console.log('[Protocol] Triggering patient matching job...');
+                const { matched, assigned } = await runProtocolMatching(db, siteId, trialId, userId);
+                console.log(`[Protocol] Matching done: ${matched} patients evaluated, ${assigned} auto-assigned`);
+            } catch (err) {
+                console.error('[Protocol] Background extraction error:', err);
+            }
+        })();
     } catch (err) {
         console.error('[Protocol] Upload error:', err);
         res.status(500).json({ error: 'Upload failed' });
@@ -232,7 +266,7 @@ router.get('/:id/protocol/download', async (req: Request, res: Response) => {
     res.redirect(data.signedUrl);
 });
 
-router.delete('/:id/protocol', requireRole('MANAGER'), async (req: Request, res: Response) => {
+router.delete('/:id/protocol', requireRole('MANAGER', 'CRC'), async (req: Request, res: Response) => {
     const db = req.app.locals.db;
     const supabase = req.app.locals.supabase;
     const protocol = (await db.query(
@@ -243,6 +277,11 @@ router.delete('/:id/protocol', requireRole('MANAGER'), async (req: Request, res:
 
     await supabase.storage.from('trial-protocols').remove([protocol.storage_path]);
     await db.query('DELETE FROM trial_protocols WHERE trial_id = $1 AND site_id = $2', [req.params.id, req.user.site_id]);
+    await db.query(
+        `UPDATE trials SET inclusion_criteria = NULL, exclusion_criteria = NULL, extracted_criteria_json = NULL, updated_at = NOW()
+         WHERE id = $1 AND site_id = $2`,
+        [req.params.id, req.user.site_id]
+    );
     res.json({ message: 'Protocol deleted' });
 });
 
