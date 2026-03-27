@@ -65,6 +65,7 @@ export const api = {
     // Trial Signal Rules
     getTrialRules: (trialId: string) => request(`/trials/${trialId}/signal-rules`),
     createTrialRule: (trialId: string, data: Record<string, unknown>) => request(`/trials/${trialId}/signal-rules`, { method: 'POST', body: data }),
+    updateTrialRule: (ruleId: string, data: Record<string, unknown>) => request(`/trials/signal-rules/${ruleId}`, { method: 'PATCH', body: data }),
     deleteTrialRule: (ruleId: string) => request(`/trials/signal-rules/${ruleId}`, { method: 'DELETE' }),
 
     // Signal Types
@@ -137,6 +138,7 @@ export const api = {
     },
     getProtocolUrl: (trialId: string) => `${API_BASE}/trials/${trialId}/protocol/download`,
     deleteProtocol: (trialId: string) => request(`/trials/${trialId}/protocol`, { method: 'DELETE' }),
+    reextractProtocol: (trialId: string) => request(`/trials/${trialId}/protocol/reextract`, { method: 'POST' }),
 
     // Visit Templates
     getVisitTemplates: (trialId: string) => request(`/trials/${trialId}/visit-templates`),

@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import pdfParse from 'pdf-parse';
 import { authMiddleware, requireRole, auditLog } from '../middleware/auth';
-import { extractProtocolData, cleanPdfText } from '../services/aiIngestion';
+import { extractProtocolData, extractEligibilityCriteria, extractVisitSchedule, extractSignalRulesFromCriteria, cleanPdfText, type ExtractedVisit, type ExtractedSignalRule } from '../services/aiIngestion';
 import { runProtocolMatching } from '../services/patientMatching';
 
 function extractCriteria(text: string): { inclusion: string | null; exclusion: string | null } {
@@ -22,6 +22,85 @@ function cleanCriteriaText(raw: string): string | null {
         .filter(l => l.length > 5 && l.length < 500)
         .slice(0, 30);
     return lines.length > 0 ? lines.join('\n') : null;
+}
+
+function formatAssessmentsAsNotes(assessments: ExtractedVisit['assessments']): string {
+    if (!assessments || assessments.length === 0) return '';
+
+    // Group by category
+    const byCategory = new Map<string, typeof assessments>();
+    for (const a of assessments) {
+        const cat = a.category || 'General';
+        if (!byCategory.has(cat)) byCategory.set(cat, []);
+        byCategory.get(cat)!.push(a);
+    }
+
+    const lines: string[] = [];
+    for (const [category, items] of byCategory) {
+        lines.push(`${category}:`);
+        for (const item of items) {
+            let line = `  • ${item.name}`;
+            if (item.conditional) line += ' *';
+            if (item.note) line += ` (${item.note})`;
+            lines.push(line);
+        }
+    }
+    return lines.join('\n');
+}
+
+async function upsertVisitSchedule(db: { query: (text: string, values?: unknown[]) => Promise<{ rows: unknown[] }> }, siteId: string, trialId: string, visits: ExtractedVisit[]) {
+    if (visits.length === 0) return;
+    await db.query('DELETE FROM visit_templates WHERE trial_id = $1 AND site_id = $2', [trialId, siteId]);
+    for (let i = 0; i < visits.length; i++) {
+        const v = visits[i];
+        const notes = formatAssessmentsAsNotes(v.assessments);
+        await db.query(
+            `INSERT INTO visit_templates (id, site_id, trial_id, visit_name, day_offset, window_before, window_after, reminder_days_before, notes, sort_order)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            [uuidv4(), siteId, trialId, v.name, v.day_offset, v.window_before ?? 3, v.window_after ?? 3, 3, notes || null, i]
+        );
+    }
+    console.log(`[Protocol] Upserted ${visits.length} visit templates from schedule of assessments`);
+}
+
+async function upsertSignalRules(db: { query: (text: string, values?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> }, siteId: string, trialId: string, rules: ExtractedSignalRule[]) {
+    if (rules.length === 0) return;
+    // Delete existing auto-extracted signal rules for this trial
+    await db.query('DELETE FROM trial_signal_rules WHERE trial_id = $1 AND site_id = $2', [trialId, siteId]);
+    for (const rule of rules) {
+        // Upsert the signal type by name (create if it doesn't exist for this site)
+        let signalType = (await db.query(
+            'SELECT id FROM signal_types WHERE site_id = $1 AND name = $2',
+            [siteId, rule.name]
+        )).rows[0];
+
+        if (!signalType) {
+            const stId = uuidv4();
+            // Map Claude's data_type to the DB enum: NUMBER | STRING | ENUM
+            const valueType = rule.data_type === 'number' ? 'NUMBER' : 'STRING';
+            await db.query(
+                `INSERT INTO signal_types (id, site_id, name, label, value_type, unit) VALUES ($1, $2, $3, $4, $5, $6)`,
+                [stId, siteId, rule.name, rule.label, valueType, rule.unit || null]
+            );
+            signalType = { id: stId };
+        }
+
+        // DB operator constraint: GTE | LTE | EQ | IN
+        // Map extended operators: RANGE → GTE (store min; max stored as threshold_text), HAS_HISTORY/NOT_HAS_HISTORY → EQ
+        const dbOperator = rule.operator === 'RANGE' ? 'GTE'
+            : (rule.operator === 'HAS_HISTORY' || rule.operator === 'NOT_HAS_HISTORY') ? 'EQ'
+            : rule.operator;
+        const thresholdText = rule.operator === 'RANGE' && rule.threshold_number_max != null
+            ? `max:${rule.threshold_number_max}`
+            : rule.threshold_text ?? null;
+
+        await db.query(
+            `INSERT INTO trial_signal_rules (id, site_id, trial_id, signal_type_id, operator, threshold_number, threshold_text, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, true)`,
+            [uuidv4(), siteId, trialId, signalType.id, dbOperator, rule.threshold_number ?? null, thresholdText]
+        );
+    }
+    console.log(`[Protocol] Upserted ${rules.length} signal rules from inclusion criteria`);
 }
 
 const router = Router();
@@ -207,22 +286,25 @@ router.post('/:id/protocol', requireRole('MANAGER', 'CRC'), upload.single('file'
                 const cleanedText = cleanPdfText(pdfData.text);
                 const regexExtracted = extractCriteria(cleanedText);
 
-                console.log('[Protocol] Running AI extraction...');
-                const aiExtracted = await extractProtocolData(cleanedText);
-                console.log('[Protocol] AI extraction complete —', aiExtracted.inclusion_criteria.length, 'inclusion,', aiExtracted.exclusion_criteria.length, 'exclusion criteria found');
+                // Pass 1 (parallel): protocol metadata + visit schedule — fully independent
+                console.log('[Protocol] Pass 1: extracting protocol metadata + visit schedule in parallel...');
+                const [aiExtracted, visits] = await Promise.all([
+                    extractProtocolData(cleanedText),
+                    extractVisitSchedule(cleanedText),
+                ]);
+                console.log('[Protocol] Pass 1 complete —', aiExtracted.inclusion_criteria.length, 'inclusion,', aiExtracted.exclusion_criteria.length, 'exclusion criteria found');
 
                 const criteriaUpdates: string[] = [];
                 const criteriaVals: unknown[] = [];
                 let cp = 0;
 
-                // Always overwrite with AI results (best available data)
                 const inclusionText = aiExtracted.raw_inclusion_text || regexExtracted.inclusion;
                 const exclusionText = aiExtracted.raw_exclusion_text || regexExtracted.exclusion;
 
                 if (inclusionText) { criteriaUpdates.push(`inclusion_criteria = $${++cp}`); criteriaVals.push(inclusionText); }
                 if (exclusionText) { criteriaUpdates.push(`exclusion_criteria = $${++cp}`); criteriaVals.push(exclusionText); }
                 if (aiExtracted.specialty) { criteriaUpdates.push(`specialty = $${++cp}`); criteriaVals.push(aiExtracted.specialty); }
-                if (aiExtracted.description || aiExtracted.primary_endpoint) {
+                if (aiExtracted.indication || aiExtracted.primary_endpoint) {
                     criteriaUpdates.push(`description = $${++cp}`);
                     criteriaVals.push([aiExtracted.indication, aiExtracted.primary_endpoint].filter(Boolean).join(' — '));
                 }
@@ -235,7 +317,16 @@ router.post('/:id/protocol', requireRole('MANAGER', 'CRC'), upload.single('file'
                     `UPDATE trials SET ${criteriaUpdates.join(', ')}, updated_at = NOW() WHERE id = $${++cp} AND site_id = $${++cp}`,
                     criteriaVals
                 );
-                console.log('[Protocol] Trial updated with extracted criteria');
+
+                await upsertVisitSchedule(db, siteId, trialId, visits);
+
+                // Pass 2: signal rules — reads only the already-extracted inclusion + exclusion text, not the full doc
+                console.log('[Protocol] Pass 2: extracting signal rules from inclusion criteria...');
+                const signalRules = await extractSignalRulesFromCriteria(
+                    inclusionText || '',
+                    aiExtracted.specialty || undefined
+                );
+                await upsertSignalRules(db, siteId, trialId, signalRules);
 
                 // Now run patient matching
                 console.log('[Protocol] Triggering patient matching job...');
@@ -264,6 +355,73 @@ router.get('/:id/protocol/download', async (req: Request, res: Response) => {
     if (error) { res.status(500).json({ error: 'Could not generate download URL' }); return; }
 
     res.redirect(data.signedUrl);
+});
+
+router.post('/:id/protocol/reextract', requireRole('MANAGER', 'CRC'), async (req: Request, res: Response) => {
+    const db = req.app.locals.db;
+    const supabase = req.app.locals.supabase;
+    const trialId = req.params.id;
+    const siteId = req.user.site_id;
+    const userId = req.user.id;
+
+    const protocol = (await db.query(
+        'SELECT storage_path FROM trial_protocols WHERE trial_id = $1 AND site_id = $2 ORDER BY created_at DESC LIMIT 1',
+        [trialId, siteId]
+    )).rows[0];
+    if (!protocol) { res.status(404).json({ error: 'No protocol uploaded for this trial' }); return; }
+
+    // Respond immediately — re-extraction runs in background
+    res.json({ status: 'processing' });
+
+    (async () => {
+        try {
+            console.log('[Protocol] Downloading stored PDF for re-extraction...');
+            const { data: fileData, error: dlError } = await supabase.storage
+                .from('trial-protocols')
+                .download(protocol.storage_path);
+            if (dlError || !fileData) throw dlError ?? new Error('Download returned no data');
+
+            const buffer = Buffer.from(await fileData.arrayBuffer());
+            const pdfData = await pdfParse(buffer);
+            const cleanedText = cleanPdfText(pdfData.text);
+
+            // Run eligibility and visit schedule extraction in parallel
+            console.log('[Protocol] Re-running eligibility + visit schedule extraction...');
+            const [eligibility, visits] = await Promise.all([
+                extractEligibilityCriteria(cleanedText),
+                extractVisitSchedule(cleanedText),
+            ]);
+            console.log('[Protocol] Eligibility re-extraction complete');
+
+            // Extract signal rules from the just-extracted eligibility criteria (not the full doc)
+            const trialMeta = (await db.query('SELECT specialty FROM trials WHERE id = $1', [trialId])).rows[0];
+            const signalRules = await extractSignalRulesFromCriteria(
+                eligibility.inclusion,
+                trialMeta?.specialty || undefined
+            );
+
+            const updates: string[] = [];
+            const vals: unknown[] = [];
+            let p = 0;
+
+            if (eligibility.inclusion) { updates.push(`inclusion_criteria = $${++p}`); vals.push(eligibility.inclusion); }
+            if (eligibility.exclusion) { updates.push(`exclusion_criteria = $${++p}`); vals.push(eligibility.exclusion); }
+            if (updates.length === 0) { console.log('[Protocol] No criteria extracted — skipping update'); return; }
+            vals.push(trialId, siteId);
+
+            await db.query(
+                `UPDATE trials SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${++p} AND site_id = $${++p}`,
+                vals
+            );
+            console.log('[Protocol] Trial criteria updated from re-extraction');
+
+            await upsertVisitSchedule(db, siteId, trialId, visits);
+            await upsertSignalRules(db, siteId, trialId, signalRules);
+            await runProtocolMatching(db, siteId, trialId, userId);
+        } catch (err) {
+            console.error('[Protocol] Re-extraction error:', err);
+        }
+    })();
 });
 
 router.delete('/:id/protocol', requireRole('MANAGER', 'CRC'), async (req: Request, res: Response) => {

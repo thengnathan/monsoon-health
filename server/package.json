@@ -9,6 +9,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@clerk/express": "^2.0.1",
     "@supabase/supabase-js": "^2.49.1",
     "cors": "^2.8.5",

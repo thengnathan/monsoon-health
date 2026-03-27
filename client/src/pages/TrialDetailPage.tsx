@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { StatusBadge, formatDate } from '../utils';
-import type { TrialDetail, SignalType } from '../types';
+import type { TrialDetail, SignalType, VisitTemplate } from '../types';
 
 interface CriteriaForm {
     inclusion_criteria: string;
@@ -26,52 +26,233 @@ interface SignalForm {
     unit: string;
 }
 
-function CriteriaList({ text, color }: { text: string; color: string }) {
-    // Parse lines into top-level items and sub-items (a. b. c. or i. ii.)
-    type CriterionItem = { label: string; text: string; sub: { label: string; text: string }[] };
-    const items: CriterionItem[] = [];
+// ── Criteria display helper ───────────────────────────────────────────────────
+// Converts plain-text criteria (existing DB data) to structured HTML.
+// If the text already contains HTML tags, it is returned as-is.
 
-    text.split('\n').forEach(raw => {
-        const line = raw.trim();
-        if (!line || line.length < 3) return;
+function escHtml(s: string) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
-        // Sub-item: starts with a letter+dot/paren or roman numeral
-        const subMatch = line.match(/^([a-z]{1,3}[.)]\s*|[ivxlc]+[.)]\s*)/i);
-        const topMatch = line.match(/^(\d+[.)]\s*)/);
+function boldThresholds(html: string) {
+    return html.replace(
+        /((?:[≥≤≠]|&lt;=?|&gt;=?)\s*\d+\.?\d*(?:\s*(?:mg\/dL|g\/dL|kPa|%|×\s*ULN|IU\/mL|mL\/min|μL|mmol\/L|IU\/day|IU\/L|ng\/mL))?)/g,
+        '<strong>$1</strong>'
+    );
+}
 
-        if (subMatch && items.length > 0) {
-            const label = subMatch[1].trim();
-            const content = line.slice(subMatch[1].length).trim();
-            items[items.length - 1].sub.push({ label, text: content });
-        } else if (topMatch) {
-            const content = line.slice(topMatch[1].length).trim();
-            items.push({ label: String(items.length + 1), text: content, sub: [] });
+function criteriaToHtml(raw: string): string {
+    if (!raw.trim()) return '';
+    if (/<(?:ol|ul|li|p|div|strong|em|br)\b/i.test(raw)) return raw;
+
+    const text = raw
+        .replace(/([.!?:])\s+(\d{1,2}[.)]\s)/g, '$1\n$2')
+        .replace(/([.!?])\s+([a-z][.)]\s)/g, '$1\n   $2')
+        .replace(/[""]/g, '"').replace(/['']/g, "'");
+
+    const lines = text.split('\n').map((l: string) => l.trimEnd()).filter((l: string) => l.trimStart().length > 0);
+
+    const SKIP = /^(main study|inclusion criteria|exclusion criteria|part [a-z]\b|study phase|subjects (must|who|in the)|eligibility criteria|to be eligible)/i;
+    const PAGE_REF = /^(page \d|protocol:|amendment \d|confidential)/i;
+
+    type Node = { text: string; children: string[]; notes: string[] };
+    const roots: Node[] = [];
+    let cur: Node | null = null;
+
+    for (const raw of lines) {
+        const line = raw.trimStart();
+        if (!line || SKIP.test(line) || PAGE_REF.test(line)) continue;
+
+        const leadSpaces = raw.length - line.length;
+        const topM = line.match(/^(\d{1,2}[.)]\s*)([\s\S]*)/);
+        const subM = line.match(/^([a-z]{1,3}[.)]\s*)([\s\S]*)/i);
+        const romanM = line.match(/^(i{1,3}v?|vi{0,3}|ix|x{1,3})[.)]\s/i);
+        const isNote = /^note:/i.test(line);
+
+        if (topM) {
+            cur = { text: topM[2].trim(), children: [], notes: [] };
+            roots.push(cur);
+        } else if (subM && !romanM) {
+            const content = `${subM[1]}${subM[2].trim()}`;
+            if (cur) cur.children.push(content);
+            else roots.push({ text: content, children: [], notes: [] });
+        } else if (leadSpaces >= 2 && cur) {
+            cur.children.push(line);
+        } else if (isNote && cur) {
+            cur.notes.push(line);
+        } else if (cur) {
+            cur.text += ' ' + line;
         } else {
-            items.push({ label: String(items.length + 1), text: line, sub: [] });
+            cur = { text: line, children: [], notes: [] };
+            roots.push(cur);
         }
-    });
+    }
+
+    if (roots.length === 0) return `<p>${escHtml(raw)}</p>`;
+
+    const parts = ['<ol>'];
+    for (const node of roots) {
+        let li = boldThresholds(escHtml(node.text));
+        if (node.notes.length > 0) {
+            li += node.notes.map((n: string) =>
+                `<div style="margin-top:4px;font-size:0.85em;color:var(--text-tertiary);font-style:italic">${escHtml(n)}</div>`
+            ).join('');
+        }
+        if (node.children.length > 0) {
+            li += '<ul>' + node.children.map((c: string) => `<li>${boldThresholds(escHtml(c))}</li>`).join('') + '</ul>';
+        }
+        parts.push(`<li>${li}</li>`);
+    }
+    parts.push('</ol>');
+    return parts.join('');
+}
+
+// ── Rich Text Editor (Gmail-style) ───────────────────────────────────────────
+
+function RichTextEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+    const editorRef = useRef<HTMLDivElement>(null);
+    const isInternalChange = useRef(false);
+
+    // Sync value from parent only when it changes externally (e.g. cancel/reset)
+    useEffect(() => {
+        if (editorRef.current && !isInternalChange.current) {
+            editorRef.current.innerHTML = criteriaToHtml(value);
+        }
+        isInternalChange.current = false;
+    }, [value]);
+
+    const handleInput = () => {
+        isInternalChange.current = true;
+        onChange(editorRef.current?.innerHTML ?? '');
+    };
+
+    // Use onMouseDown + preventDefault so toolbar clicks don't steal focus from editor
+    const exec = (cmd: string, val?: string) => {
+        editorRef.current?.focus();
+        document.execCommand(cmd, false, val ?? undefined);
+    };
+
+    const btnStyle: React.CSSProperties = {
+        border: 'none', background: 'none', cursor: 'pointer',
+        padding: '4px 7px', borderRadius: 3,
+        color: 'var(--text-secondary)', fontFamily: 'inherit',
+        fontSize: 13, lineHeight: 1,
+        display: 'inline-flex', alignItems: 'center',
+    };
+
+    const divider = (
+        <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)', margin: '3px 2px' }} />
+    );
 
     return (
-        <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {items.map((item, i) => (
-                <li key={i}>
-                    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start', fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                        <span style={{ minWidth: 22, height: 22, borderRadius: '50%', background: `color-mix(in srgb, ${color} 15%, transparent)`, color, fontSize: '0.7rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{i + 1}</span>
-                        <span>{item.text}</span>
-                    </div>
-                    {item.sub.length > 0 && (
-                        <ol style={{ listStyle: 'none', padding: '0.4rem 0 0 2.5rem', margin: 0, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                            {item.sub.map((sub, j) => (
-                                <li key={j} style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                                    <span style={{ minWidth: 18, height: 18, borderRadius: '3px', background: `color-mix(in srgb, ${color} 10%, transparent)`, color, fontSize: '0.65rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>{String.fromCharCode(97 + j)}</span>
-                                    <span>{sub.text}</span>
-                                </li>
-                            ))}
-                        </ol>
-                    )}
-                </li>
-            ))}
-        </ol>
+        <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', background: 'var(--bg-primary)' }}>
+            {/* Toolbar */}
+            <div style={{
+                display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1,
+                padding: '5px 8px', borderBottom: '1px solid var(--border)',
+                background: 'var(--bg-secondary)',
+            }}>
+                {/* Font size */}
+                <select
+                    defaultValue="3"
+                    onChange={e => { exec('fontSize', e.target.value); editorRef.current?.focus(); }}
+                    onMouseDown={e => e.stopPropagation()}
+                    style={{
+                        fontSize: 12, padding: '3px 5px', marginRight: 2,
+                        border: '1px solid var(--border)', borderRadius: 3,
+                        background: 'var(--bg-primary)', color: 'var(--text-secondary)',
+                        cursor: 'pointer',
+                    }}
+                >
+                    <option value="1">Small</option>
+                    <option value="3">Normal</option>
+                    <option value="4">Large</option>
+                    <option value="5">Larger</option>
+                </select>
+
+                {divider}
+
+                <button type="button" style={btnStyle} title="Bold (⌘B)"
+                    onMouseDown={e => { e.preventDefault(); exec('bold'); }}>
+                    <strong>B</strong>
+                </button>
+                <button type="button" style={btnStyle} title="Italic (⌘I)"
+                    onMouseDown={e => { e.preventDefault(); exec('italic'); }}>
+                    <em style={{ fontStyle: 'italic' }}>I</em>
+                </button>
+                <button type="button" style={{ ...btnStyle, textDecoration: 'underline' }} title="Underline (⌘U)"
+                    onMouseDown={e => { e.preventDefault(); exec('underline'); }}>
+                    U
+                </button>
+                <button type="button" style={btnStyle} title="Strikethrough"
+                    onMouseDown={e => { e.preventDefault(); exec('strikeThrough'); }}>
+                    <s>S</s>
+                </button>
+
+                {divider}
+
+                <button type="button" style={btnStyle} title="Numbered list"
+                    onMouseDown={e => { e.preventDefault(); exec('insertOrderedList'); }}>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <line x1="5" y1="3.5" x2="13" y2="3.5" /><line x1="5" y1="7" x2="13" y2="7" /><line x1="5" y1="10.5" x2="13" y2="10.5" />
+                        <text x="1" y="4.5" fontSize="3.5" fill="currentColor" stroke="none">1</text>
+                        <text x="1" y="8" fontSize="3.5" fill="currentColor" stroke="none">2</text>
+                        <text x="1" y="11.5" fontSize="3.5" fill="currentColor" stroke="none">3</text>
+                    </svg>
+                </button>
+                <button type="button" style={btnStyle} title="Bullet list"
+                    onMouseDown={e => { e.preventDefault(); exec('insertUnorderedList'); }}>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <circle cx="2" cy="3.5" r="1" fill="currentColor" stroke="none" /><line x1="5" y1="3.5" x2="13" y2="3.5" />
+                        <circle cx="2" cy="7" r="1" fill="currentColor" stroke="none" /><line x1="5" y1="7" x2="13" y2="7" />
+                        <circle cx="2" cy="10.5" r="1" fill="currentColor" stroke="none" /><line x1="5" y1="10.5" x2="13" y2="10.5" />
+                    </svg>
+                </button>
+
+                {divider}
+
+                <button type="button" style={btnStyle} title="Indent"
+                    onMouseDown={e => { e.preventDefault(); exec('indent'); }}>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <line x1="1" y1="3" x2="13" y2="3" /><line x1="5" y1="7" x2="13" y2="7" /><line x1="1" y1="11" x2="13" y2="11" />
+                        <polyline points="1,5.5 3,7 1,8.5" fill="currentColor" stroke="none" />
+                    </svg>
+                </button>
+                <button type="button" style={btnStyle} title="Outdent"
+                    onMouseDown={e => { e.preventDefault(); exec('outdent'); }}>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <line x1="1" y1="3" x2="13" y2="3" /><line x1="5" y1="7" x2="13" y2="7" /><line x1="1" y1="11" x2="13" y2="11" />
+                        <polyline points="4,5.5 2,7 4,8.5" fill="currentColor" stroke="none" />
+                    </svg>
+                </button>
+
+                {divider}
+
+                <button type="button" style={{ ...btnStyle, fontSize: 11, color: 'var(--text-tertiary)' }} title="Remove formatting"
+                    onMouseDown={e => { e.preventDefault(); exec('removeFormat'); }}>
+                    T✕
+                </button>
+            </div>
+
+            {/* Editable content area */}
+            <div
+                ref={editorRef}
+                contentEditable
+                suppressContentEditableWarning
+                onInput={handleInput}
+                style={{
+                    minHeight: 160,
+                    padding: '10px 14px',
+                    fontSize: 'var(--font-sm)',
+                    color: 'var(--text-primary)',
+                    lineHeight: 1.65,
+                    outline: 'none',
+                    background: 'var(--bg-primary)',
+                    // Restore browser default list indentation inside contenteditable
+                    ['--list-padding' as string]: '1.5rem',
+                }}
+            />
+        </div>
     );
 }
 
@@ -83,6 +264,13 @@ export default function TrialDetailPage() {
     const [showSignalModal, setShowSignalModal] = useState(false);
     const [editingCriteria, setEditingCriteria] = useState(false);
     const [criteriaForm, setCriteriaForm] = useState<CriteriaForm>({ inclusion_criteria: '', exclusion_criteria: '' });
+    const [reextracting, setReextracting] = useState(false);
+    const [inclusionCollapsed, setInclusionCollapsed] = useState(true);
+    const [exclusionCollapsed, setExclusionCollapsed] = useState(true);
+    const [caseTab, setCaseTab] = useState<'potential' | 'screening' | 'enrolled'>('screening');
+    const [selectedVisit, setSelectedVisit] = useState<VisitTemplate | null>(null);
+    const [visitNotes, setVisitNotes] = useState('');
+    const [savingVisitNotes, setSavingVisitNotes] = useState(false);
     const [signalTypes, setSignalTypes] = useState<SignalType[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const navigate = useNavigate();
@@ -125,6 +313,19 @@ export default function TrialDetailPage() {
         } catch (err) { addToast((err as Error).message, 'error'); }
     };
 
+    const handleReextract = async () => {
+        setReextracting(true);
+        try {
+            await api.reextractProtocol(id!);
+            addToast('Re-extraction started — criteria will update in the background', 'success');
+            // Poll for updated criteria after a short delay
+            setTimeout(() => { loadTrial(); setReextracting(false); }, 8000);
+        } catch (err) {
+            addToast((err as Error).message, 'error');
+            setReextracting(false);
+        }
+    };
+
     const handleSaveCriteria = async () => {
         try {
             await api.updateTrial(id!, criteriaForm as unknown as Record<string, unknown>);
@@ -162,6 +363,7 @@ export default function TrialDetailPage() {
 
     const emptySignalForm: SignalForm = { signal_type_id: '', operator: 'GTE', threshold_number: '', unit: '' };
     const [signalForm, setSignalForm] = useState<SignalForm>(emptySignalForm);
+    const [editingRule, setEditingRule] = useState<import('../types').SignalRule | null>(null);
 
     const handleAddSignal = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -171,6 +373,21 @@ export default function TrialDetailPage() {
             await api.createTrialRule(id!, payload);
             addToast('Signal rule added', 'success');
             setShowSignalModal(false);
+            setSignalForm(emptySignalForm);
+            loadTrial();
+        } catch (err) { addToast((err as Error).message, 'error'); }
+    };
+
+    const handleUpdateSignal = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingRule) return;
+        try {
+            const payload: Record<string, unknown> = { operator: signalForm.operator };
+            if (signalForm.threshold_number) payload.threshold_number = parseFloat(signalForm.threshold_number);
+            if (signalForm.unit) payload.unit = signalForm.unit;
+            await api.updateTrialRule(editingRule.id, payload);
+            addToast('Signal rule updated', 'success');
+            setEditingRule(null);
             setSignalForm(emptySignalForm);
             loadTrial();
         } catch (err) { addToast((err as Error).message, 'error'); }
@@ -244,7 +461,18 @@ export default function TrialDetailPage() {
                         )}
                         <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleProtocolUpload} style={{ display: 'none' }} />
                         {trial.protocol && (
-                            <button className="btn btn-sm btn-ghost" style={{ marginTop: 'var(--space-2)' }} onClick={() => fileInputRef.current?.click()}>Replace Protocol</button>
+                            <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                                <button className="btn btn-sm btn-ghost" onClick={() => fileInputRef.current?.click()}>Replace Protocol</button>
+                                <button
+                                    className="btn btn-sm btn-ghost"
+                                    onClick={handleReextract}
+                                    disabled={reextracting}
+                                    title="Re-run AI extraction on the uploaded protocol PDF"
+                                    style={{ color: 'var(--text-tertiary)' }}
+                                >
+                                    {reextracting ? 'Re-extracting…' : '↺ Re-extract'}
+                                </button>
+                            </div>
                         )}
                     </div>
 
@@ -258,13 +486,19 @@ export default function TrialDetailPage() {
                         </div>
                         {editingCriteria ? (
                             <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                                <div className="form-group" style={{ marginBottom: 0 }}>
-                                    <label className="form-label">Inclusion Criteria</label>
-                                    <textarea className="form-textarea" rows={5} value={criteriaForm.inclusion_criteria} onChange={e => setCriteriaForm({ ...criteriaForm, inclusion_criteria: e.target.value })} placeholder="One criterion per line…" />
+                                <div>
+                                    <label className="form-label" style={{ display: 'block', marginBottom: 'var(--space-2)' }}>Inclusion Criteria</label>
+                                    <RichTextEditor
+                                        value={criteriaForm.inclusion_criteria}
+                                        onChange={v => setCriteriaForm(f => ({ ...f, inclusion_criteria: v }))}
+                                    />
                                 </div>
-                                <div className="form-group" style={{ marginBottom: 0 }}>
-                                    <label className="form-label">Exclusion Criteria</label>
-                                    <textarea className="form-textarea" rows={5} value={criteriaForm.exclusion_criteria} onChange={e => setCriteriaForm({ ...criteriaForm, exclusion_criteria: e.target.value })} placeholder="One criterion per line…" />
+                                <div>
+                                    <label className="form-label" style={{ display: 'block', marginBottom: 'var(--space-2)' }}>Exclusion Criteria</label>
+                                    <RichTextEditor
+                                        value={criteriaForm.exclusion_criteria}
+                                        onChange={v => setCriteriaForm(f => ({ ...f, exclusion_criteria: v }))}
+                                    />
                                 </div>
                                 <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
                                     <button className="btn btn-primary btn-sm" onClick={handleSaveCriteria}>Save</button>
@@ -272,61 +506,53 @@ export default function TrialDetailPage() {
                                 </div>
                             </div>
                         ) : (
-                            <div style={{ marginTop: 'var(--space-4)' }}>
+                            <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                                 {!trial.inclusion_criteria && !trial.exclusion_criteria ? (
                                     <div className="card" style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
                                         <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No criteria defined yet. Upload the protocol and enter criteria here.</p>
                                     </div>
                                 ) : (
-                                    <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
-                                        {trial.inclusion_criteria && (
-                                            <div className="card">
-                                                <div className="card-header"><div className="card-title" style={{ color: 'var(--success)', fontSize: 'var(--font-sm)' }}>✓ Inclusion Criteria</div></div>
-                                                <CriteriaList text={trial.inclusion_criteria} color="var(--success)" />
-                                            </div>
-                                        )}
-                                        {trial.exclusion_criteria && (
-                                            <div className="card">
-                                                <div className="card-header"><div className="card-title" style={{ color: 'var(--error)', fontSize: 'var(--font-sm)' }}>✕ Exclusion Criteria</div></div>
-                                                <CriteriaList text={trial.exclusion_criteria} color="var(--error)" />
-                                            </div>
-                                        )}
-                                    </div>
+                                    <>
+                                        {/* Inclusion panel */}
+                                        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                                            <button
+                                                onClick={() => setInclusionCollapsed(c => !c)}
+                                                style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px var(--space-4)', background: 'var(--bg-secondary)', border: 'none', cursor: 'pointer', borderBottom: inclusionCollapsed ? 'none' : '1px solid var(--border)' }}
+                                            >
+                                                <span style={{ fontSize: 'var(--font-base)', fontWeight: 600, color: 'var(--text-primary)' }}>Inclusion Criteria</span>
+                                                <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{inclusionCollapsed ? '▼' : '▲'}</span>
+                                            </button>
+                                            {!inclusionCollapsed && (
+                                                <div
+                                                    className="criteria-html"
+                                                    dangerouslySetInnerHTML={{ __html: criteriaToHtml(trial.inclusion_criteria || '') }}
+                                                    style={{ padding: 'var(--space-4)', fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', lineHeight: 1.65 }}
+                                                />
+                                            )}
+                                        </div>
+                                        {/* Exclusion panel */}
+                                        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                                            <button
+                                                onClick={() => setExclusionCollapsed(c => !c)}
+                                                style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px var(--space-4)', background: 'var(--bg-secondary)', border: 'none', cursor: 'pointer', borderBottom: exclusionCollapsed ? 'none' : '1px solid var(--border)' }}
+                                            >
+                                                <span style={{ fontSize: 'var(--font-base)', fontWeight: 600, color: 'var(--text-primary)' }}>Exclusion Criteria</span>
+                                                <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{exclusionCollapsed ? '▼' : '▲'}</span>
+                                            </button>
+                                            {!exclusionCollapsed && (
+                                                <div
+                                                    className="criteria-html"
+                                                    dangerouslySetInnerHTML={{ __html: criteriaToHtml(trial.exclusion_criteria || '') }}
+                                                    style={{ padding: 'var(--space-4)', fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', lineHeight: 1.65 }}
+                                                />
+                                            )}
+                                        </div>
+                                    </>
                                 )}
                             </div>
                         )}
                     </div>
 
-                    {/* Screening Cases */}
-                    <div className="detail-section">
-                        <div className="detail-section-title">Screening Cases ({trial.screening_cases?.length || 0})</div>
-                        {(!trial.screening_cases || trial.screening_cases.length === 0) ? (
-                            <div className="empty-state" style={{ padding: '2rem' }}><p>No screening cases for this trial</p></div>
-                        ) : (
-                            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                                <table className="data-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Patient</th>
-                                            <th>Status</th>
-                                            <th>CRC</th>
-                                            <th>Updated</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {trial.screening_cases.map(sc => (
-                                            <tr key={sc.id} onClick={() => navigate(`/screening/${sc.id}`)}>
-                                                <td className="patient-name">{sc.last_name}, {sc.first_name}</td>
-                                                <td><StatusBadge status={sc.status} /></td>
-                                                <td className="meta">{sc.assigned_user_name || '—'}</td>
-                                                <td className="meta">{formatDate(sc.updated_at)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
                 </div>
 
                 <div>
@@ -342,19 +568,55 @@ export default function TrialDetailPage() {
                                     <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No visits defined. Add visits to set up the study schedule.</p>
                                 </div>
                             ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                                <div className="card" style={{ padding: 'var(--space-4)', maxHeight: 480, overflowY: 'auto' }}>
                                     {trial.visit_templates.map((vt, i) => (
-                                        <div key={vt.id} className="card" style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                                            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--accent-muted)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--font-xs)', fontWeight: 700, flexShrink: 0 }}>
-                                                {i + 1}
+                                        <div key={vt.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+                                            {/* Left: connector line + circle */}
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 32 }}>
+                                                <button
+                                                    onClick={() => { setSelectedVisit(vt); setVisitNotes(vt.notes || ''); }}
+                                                    style={{
+                                                        width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                                                        background: 'var(--accent-muted)', color: 'var(--accent)',
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        fontSize: 'var(--font-xs)', fontWeight: 700,
+                                                        border: '2px solid var(--accent)',
+                                                        cursor: 'pointer', padding: 0,
+                                                    }}
+                                                >
+                                                    {i + 1}
+                                                </button>
+                                                {i < trial.visit_templates.length - 1 && (
+                                                    <div style={{ width: 2, flex: 1, minHeight: 24, background: 'var(--border)', marginTop: 2, marginBottom: 2 }} />
+                                                )}
                                             </div>
-                                            <div style={{ flex: 1 }}>
-                                                <div style={{ fontWeight: 500, fontSize: 'var(--font-sm)' }}>{vt.visit_name}</div>
-                                                <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)' }}>
-                                                    Day {vt.day_offset} · Window ±{vt.window_before}/{vt.window_after}d · Reminder {vt.reminder_days_before}d before
+                                            {/* Right: visit info + actions */}
+                                            <div style={{ flex: 1, paddingBottom: i < trial.visit_templates.length - 1 ? 'var(--space-3)' : 0 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                    <button
+                                                        onClick={() => { setSelectedVisit(vt); setVisitNotes(vt.notes || ''); }}
+                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}
+                                                    >
+                                                        <div style={{ fontWeight: 600, fontSize: 'var(--font-sm)', color: 'var(--text-primary)', lineHeight: 1.3 }}>{vt.visit_name}</div>
+                                                        <div style={{ fontSize: 'var(--font-xs)', color: 'var(--accent)', fontWeight: 600, marginTop: 2 }}>
+                                                            Day {vt.day_offset}
+                                                            <span style={{ color: 'var(--text-tertiary)', fontWeight: 400, marginLeft: 6 }}>±{vt.window_before}/{vt.window_after}d</span>
+                                                        </div>
+                                                    </button>
+                                                    <div style={{ display: 'flex', gap: 2, flexShrink: 0, marginLeft: 'var(--space-2)' }}>
+                                                        <button
+                                                            className="btn btn-sm btn-ghost"
+                                                            onClick={() => { setSelectedVisit(vt); setVisitNotes(vt.notes || ''); }}
+                                                            style={{ color: 'var(--text-tertiary)', fontSize: 10, padding: '2px 6px' }}
+                                                        >Edit</button>
+                                                        <button
+                                                            className="btn btn-sm btn-ghost"
+                                                            onClick={() => handleDeleteVisit(vt.id)}
+                                                            style={{ color: 'var(--text-tertiary)', fontSize: 10, padding: '2px 6px' }}
+                                                        >✕</button>
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <button className="btn btn-sm btn-ghost" onClick={() => handleDeleteVisit(vt.id)} style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)' }}>✕</button>
                                         </div>
                                     ))}
                                 </div>
@@ -386,7 +648,10 @@ export default function TrialDetailPage() {
                                                     {rule.unit && <span style={{ fontSize: 'var(--font-sm)', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 4 }}>{rule.unit}</span>}
                                                 </div>
                                             </div>
-                                            <button className="btn btn-sm btn-ghost" onClick={() => handleDeleteSignal(rule.id)} style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)' }}>✕</button>
+                                            <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
+                                                <button className="btn btn-sm btn-ghost" onClick={() => { setEditingRule(rule); setSignalForm({ signal_type_id: rule.id, operator: rule.operator, threshold_number: rule.threshold_number?.toString() ?? '', unit: rule.unit ?? '' }); }} style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)' }}>Edit</button>
+                                                <button className="btn btn-sm btn-ghost" onClick={() => handleDeleteSignal(rule.id)} style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)' }}>✕</button>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -395,6 +660,86 @@ export default function TrialDetailPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Cases Tabs */}
+            {(() => {
+                const SCREENING_STATUSES = ['NEW', 'IN_REVIEW', 'PENDING_INFO', 'LIKELY_ELIGIBLE'];
+                const all = trial.screening_cases || [];
+                const potentialCases = all.filter(c => c.status === 'FUTURE_CANDIDATE');
+                const screeningCases = all.filter(c => SCREENING_STATUSES.includes(c.status));
+                const enrolledCases = all.filter(c => c.status === 'ENROLLED');
+
+                const tabStyle = (active: boolean): React.CSSProperties => ({
+                    padding: '8px 18px',
+                    fontSize: 'var(--font-sm)',
+                    fontWeight: active ? 600 : 400,
+                    color: active ? 'var(--accent)' : 'var(--text-secondary)',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                });
+
+                const activeCases =
+                    caseTab === 'potential' ? potentialCases :
+                    caseTab === 'screening' ? screeningCases :
+                    enrolledCases;
+
+                return (
+                    <div style={{ marginTop: 'var(--space-6)' }}>
+                        {/* Tab bar */}
+                        <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: 'var(--space-4)', gap: 0 }}>
+                            <button style={tabStyle(caseTab === 'potential')} onClick={() => setCaseTab('potential')}>
+                                Potential Cases
+                                <span style={{ marginLeft: 6, fontSize: 11, background: 'var(--bg-secondary)', borderRadius: 10, padding: '1px 7px', color: 'var(--text-tertiary)' }}>{potentialCases.length}</span>
+                            </button>
+                            <button style={tabStyle(caseTab === 'screening')} onClick={() => setCaseTab('screening')}>
+                                Screening Cases
+                                <span style={{ marginLeft: 6, fontSize: 11, background: 'var(--bg-secondary)', borderRadius: 10, padding: '1px 7px', color: 'var(--text-tertiary)' }}>{screeningCases.length}</span>
+                            </button>
+                            <button style={tabStyle(caseTab === 'enrolled')} onClick={() => setCaseTab('enrolled')}>
+                                Enrolled Cases
+                                <span style={{ marginLeft: 6, fontSize: 11, background: 'var(--bg-secondary)', borderRadius: 10, padding: '1px 7px', color: 'var(--text-tertiary)' }}>{enrolledCases.length}</span>
+                            </button>
+                        </div>
+
+                        {/* Tab content */}
+                        {activeCases.length === 0 ? (
+                            <div className="card" style={{ textAlign: 'center', padding: 'var(--space-6)' }}>
+                                <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>
+                                    {caseTab === 'potential' && 'No future candidates for this trial.'}
+                                    {caseTab === 'screening' && 'No active screening cases for this trial.'}
+                                    {caseTab === 'enrolled' && 'No enrolled patients for this trial.'}
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                                <table className="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Patient</th>
+                                            <th>Status</th>
+                                            <th>CRC</th>
+                                            <th>Updated</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {activeCases.map(sc => (
+                                            <tr key={sc.id} onClick={() => navigate(`/screening/${sc.id}`)} style={{ cursor: 'pointer' }}>
+                                                <td className="patient-name">{sc.last_name}, {sc.first_name}</td>
+                                                <td><StatusBadge status={sc.status} /></td>
+                                                <td className="meta">{sc.assigned_user_name || '—'}</td>
+                                                <td className="meta">{formatDate(sc.updated_at)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                );
+            })()}
 
             {/* Add Visit Template Modal */}
             {showVisitModal && (
@@ -437,6 +782,93 @@ export default function TrialDetailPage() {
                             <div className="modal-actions">
                                 <button type="button" className="btn btn-secondary" onClick={() => setShowVisitModal(false)}>Cancel</button>
                                 <button type="submit" className="btn btn-primary">Add Visit</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Visit Assessments Modal */}
+            {selectedVisit && (
+                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setSelectedVisit(null)}>
+                    <div className="modal" style={{ maxWidth: 520 }}>
+                        <div className="modal-header">
+                            <div>
+                                <h3 className="modal-title">{selectedVisit.visit_name}</h3>
+                                <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                                    Day {selectedVisit.day_offset} · Window −{selectedVisit.window_before}/+{selectedVisit.window_after}d · Reminder {selectedVisit.reminder_days_before}d before
+                                </div>
+                            </div>
+                            <button className="modal-close" onClick={() => setSelectedVisit(null)}>✕</button>
+                        </div>
+                        <div style={{ padding: 'var(--space-4)' }}>
+                            <label className="form-label" style={{ display: 'block', marginBottom: 'var(--space-2)' }}>Assessments</label>
+                            <textarea
+                                className="form-input"
+                                value={visitNotes}
+                                onChange={e => setVisitNotes(e.target.value)}
+                                placeholder={'List the assessments for this visit, e.g.:\n• Vital signs\n• Blood draw (CBC, LFTs, HbA1c)\n• Physical exam\n• ECG\n• Patient questionnaire'}
+                                rows={10}
+                                style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 'var(--font-sm)', lineHeight: 1.6 }}
+                            />
+                        </div>
+                        <div className="modal-actions">
+                            <button className="btn btn-secondary" onClick={() => setSelectedVisit(null)}>Cancel</button>
+                            <button
+                                className="btn btn-primary"
+                                disabled={savingVisitNotes}
+                                onClick={async () => {
+                                    setSavingVisitNotes(true);
+                                    try {
+                                        await api.updateVisitTemplate(selectedVisit.id, { notes: visitNotes });
+                                        addToast('Assessments saved', 'success');
+                                        setSelectedVisit(null);
+                                        loadTrial();
+                                    } catch (err) {
+                                        addToast((err as Error).message, 'error');
+                                    } finally {
+                                        setSavingVisitNotes(false);
+                                    }
+                                }}
+                            >
+                                {savingVisitNotes ? 'Saving…' : 'Save'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Signal Rule Modal */}
+            {editingRule && (
+                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setEditingRule(null)}>
+                    <div className="modal">
+                        <div className="modal-header">
+                            <h3 className="modal-title">Edit Rule — {editingRule.signal_label}</h3>
+                            <button className="modal-close" onClick={() => setEditingRule(null)}>✕</button>
+                        </div>
+                        <form onSubmit={handleUpdateSignal}>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Operator *</label>
+                                    <select className="form-select" value={signalForm.operator} onChange={e => setSignalForm({ ...signalForm, operator: e.target.value })}>
+                                        <option value="GTE">≥ Greater or equal</option>
+                                        <option value="LTE">≤ Less or equal</option>
+                                        <option value="EQ">= Equals</option>
+                                        <option value="IN">in (list)</option>
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Threshold *</label>
+                                    <input className="form-input" value={signalForm.threshold_number} onChange={e => setSignalForm({ ...signalForm, threshold_number: e.target.value })} placeholder="e.g., 8.0" required />
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Unit</label>
+                                <input className="form-input" value={signalForm.unit} onChange={e => setSignalForm({ ...signalForm, unit: e.target.value })} placeholder="e.g., kPa, IU/mL" />
+                            </div>
+                            <div className="modal-actions">
+                                <button type="button" className="btn btn-secondary" onClick={() => setEditingRule(null)}>Cancel</button>
+                                <button type="submit" className="btn btn-primary">Save</button>
                             </div>
                         </form>
                     </div>

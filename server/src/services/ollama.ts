@@ -46,7 +46,7 @@ export async function ollamaChat(prompt: string, systemPrompt?: string, timeoutM
         model: OLLAMA_MODEL,
         messages,
         stream: false,
-        options: { num_ctx: 4096 },
+        options: { num_ctx: 8192 },
     });
 
     const raw = await httpPost(`${OLLAMA_BASE_URL}/api/chat`, body, timeoutMs);
