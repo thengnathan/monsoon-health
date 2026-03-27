@@ -71,7 +71,7 @@ export default function AboutPage() {
             {/* ── Team Section ── */}
             <section className="landing-team">
                 <h2 className="team-heading scroll-animate scroll-fade-up">Our Team</h2>
-                <p className="team-subtitle scroll-animate scroll-fade-up" style={{ transitionDelay: '0.1s' }}>Ashman, Nathan, and Amin met working together as clinical research coordinators on hepatology and liver cirrhosis clinical trials bringing a deep expertise in clinical operations and health technology.</p>
+                <p className="team-subtitle scroll-animate scroll-fade-up" style={{ transitionDelay: '0.1s' }}>Ashman, Nathan, and Amin met while working together as clinical research coordinators on hepatology and liver cirrhosis clinical trials, where they developed deep expertise in clinical operations and health technology. Together, they bring strong experience at the intersection of research execution and digital health innovation.</p>
                 <div className="team-cards">
                     {/* Founder 1 */}
                     <div className="founder-card scroll-animate scroll-fade-up" style={{ transitionDelay: '0s' }}>
