@@ -130,16 +130,7 @@ export default function LandingPage() {
             {/* ── Hero ── */}
             <section className="landing-hero" id="hero">
                 <div className="landing-hero-bg">
-                    <video
-                        className="landing-hero-video"
-                        autoPlay
-                        loop
-                        muted
-                        playsInline
-                        preload="auto"
-                    >
-                        <source src="/images/waves-clouds-bg.mp4" type="video/mp4" />
-                    </video>
+                    <img className="landing-hero-video" src="/images/LandingPage_2_Background.png" alt="Monsoon Health" />
                     <div className="landing-hero-overlay" />
                 </div>
 
