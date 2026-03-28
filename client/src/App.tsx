@@ -16,6 +16,8 @@ import ScreeningCaseDetailPage from './pages/ScreeningCaseDetailPage';
 import NotesPage from './pages/NotesPage';
 import LandingPage from './pages/LandingPage';
 import AboutPage from './pages/AboutPage';
+import ZephyrPage from './pages/ZephyrPage';
+import RainfallPage from './pages/RainfallPage';
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
 
@@ -150,6 +152,8 @@ function AppRoutes() {
         <Routes>
             <Route path="/landing" element={<LandingPage />} />
             <Route path="/about" element={<AboutPage />} />
+            <Route path="/products/zephyr" element={<ZephyrPage />} />
+            <Route path="/products/rainfall" element={<RainfallPage />} />
             <Route path="/login/*" element={<LoginPage />} />
             <Route path="/sign-up/*" element={<SignUpPage />} />
             <Route path="/" element={

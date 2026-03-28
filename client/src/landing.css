@@ -838,6 +838,16 @@
     margin: 0;
 }
 
+/* ── Footer Nav ───────────────────────────────────────────── */
+.landing-footer-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.5rem 4rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    margin-top: auto;
+}
+
 /* ── Responsive ───────────────────────────────────────────── */
 @media (max-width: 768px) {
     .landing-nav {
@@ -975,9 +985,9 @@
 
 /* ── About Editorial ──────────────────────────────────────── */
 .about-editorial {
-    padding: 0 8% 5rem;
+    padding: 5rem 8% 5rem;
     max-width: 1200px;
-    margin: -8rem auto 0;
+    margin: 0 auto;
     display: flex;
     flex-direction: column;
     gap: 1.6rem;
@@ -1028,6 +1038,33 @@
     pointer-events: none;
 }
 
+.about-hero-people-text {
+    position: absolute;
+    top: 16%;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    z-index: 2;
+    white-space: nowrap;
+}
+
+.about-hero-text {
+    position: absolute;
+    bottom: 12%;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    z-index: 2;
+}
+
 .about-hero-heading {
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
     font-size: clamp(2.5rem, 5vw, 4rem);
@@ -1042,6 +1079,366 @@
     color: var(--lp-text-muted);
     max-width: 560px;
     line-height: 1.7;
+}
+
+/* ── Product Pages ────────────────────────────────────────── */
+.product-hero {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+    max-width: none;
+}
+
+.product-hero-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    display: block;
+}
+
+.product-hero-fade {
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(to bottom, rgba(10, 18, 26, 0.3) 0%, rgba(10, 18, 26, 0.1) 40%, rgba(10, 18, 26, 0.7) 80%, var(--lp-bg) 100%);
+    pointer-events: none;
+}
+
+.product-hero-content {
+    position: absolute;
+    bottom: 10%;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+/* ── Product Hero Full (Zephyr/Rainfall full-page overlay) ── */
+.product-hero-full {
+    height: 100vh;
+    min-height: 100vh;
+}
+
+.product-hero-fade-full {
+    background:
+        radial-gradient(ellipse at 50% 45%, rgba(10, 18, 26, 0.5) 0%, rgba(10, 18, 26, 0.15) 55%, transparent 100%),
+        linear-gradient(to bottom,
+            rgba(10, 18, 26, 0.3) 0%,
+            rgba(10, 18, 26, 0.05) 30%,
+            rgba(10, 18, 26, 0.05) 50%,
+            rgba(10, 18, 26, 0.4) 70%,
+            rgba(10, 18, 26, 0.75) 82%,
+            rgba(10, 18, 26, 0.92) 91%,
+            #0a141e 100%
+        );
+}
+
+.scroll-indicator {
+    position: absolute;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    color: rgba(255, 255, 255, 0.5);
+    opacity: 1;
+    transition: opacity 0.4s ease;
+    z-index: 10;
+    pointer-events: none;
+    animation: scroll-bounce 1.8s ease-in-out infinite;
+}
+
+.scroll-indicator svg {
+    width: 28px;
+    height: 28px;
+}
+
+.scroll-indicator-hidden {
+    opacity: 0;
+}
+
+@keyframes scroll-bounce {
+    0%, 100% { transform: translateX(-50%) translateY(0); }
+    50%       { transform: translateX(-50%) translateY(6px); }
+}
+
+.product-hero-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 0.4rem;
+}
+
+/* ── Zephyr Feature Section ─────────────────────────── */
+.zephyr-features-section {
+    padding: 4rem 12% 5rem;
+    max-width: 100%;
+}
+
+.zephyr-features-header {
+    max-width: 680px;
+    margin-bottom: 3rem;
+}
+
+.zephyr-features-kicker {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--lp-accent);
+    letter-spacing: 0.02em;
+    margin-bottom: 0.75rem;
+    font-style: italic;
+}
+
+.zephyr-features-headline {
+    font-family: 'Friz Quadrata Std', 'Georgia', serif;
+    font-size: clamp(1.8rem, 3.5vw, 2.8rem);
+    font-weight: 700;
+    color: var(--lp-text);
+    line-height: 1.2;
+    margin-bottom: 1.25rem;
+}
+
+.zephyr-features-desc {
+    font-size: 1rem;
+    color: var(--lp-text-muted);
+    line-height: 1.8;
+    max-width: 60ch;
+}
+
+.zephyr-feature-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+}
+
+.zephyr-feature-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.zephyr-feature-card:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(136, 189, 223, 0.2);
+}
+
+.zephyr-feature-icon {
+    width: 36px;
+    height: 36px;
+    color: var(--lp-accent);
+}
+
+.zephyr-feature-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.zephyr-feature-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--lp-text);
+    letter-spacing: 0.01em;
+}
+
+.zephyr-feature-desc {
+    font-size: 0.9rem;
+    color: var(--lp-text-muted);
+    line-height: 1.7;
+    margin: 0;
+}
+
+/* ── Zephyr CTA Section ──────────────────────────────── */
+.zephyr-cta-section {
+    padding: 4rem 12% 14rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 1rem;
+}
+
+.zephyr-cta-headline {
+    font-family: 'Friz Quadrata Std', 'Georgia', serif;
+    font-size: clamp(1.6rem, 3vw, 2.4rem);
+    font-weight: 700;
+    color: var(--lp-text);
+    margin: 0;
+}
+
+.zephyr-cta-sub {
+    font-size: 1rem;
+    color: var(--lp-text-muted);
+    max-width: 50ch;
+    line-height: 1.7;
+    margin: 0;
+}
+
+.zephyr-cta-form {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.zephyr-cta-input {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    color: var(--lp-text);
+    font-size: 0.95rem;
+    padding: 0.65rem 1.2rem;
+    width: 280px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.zephyr-cta-input:focus {
+    border-color: rgba(136, 189, 223, 0.4);
+    box-shadow: 0 0 0 3px rgba(136, 189, 223, 0.08);
+}
+
+.zephyr-cta-input::placeholder { color: var(--lp-text-muted); }
+
+.zephyr-cta-confirm {
+    font-size: 1rem;
+    color: var(--lp-accent);
+    font-weight: 500;
+    margin-top: 0.5rem;
+}
+
+@media (max-width: 768px) {
+    .zephyr-features-section { padding: 3rem 1.5rem 3rem; }
+    .zephyr-feature-cards { grid-template-columns: 1fr; }
+    .zephyr-cta-section { padding: 3rem 1.5rem 5rem; }
+    .zephyr-cta-input { width: 100%; }
+}
+
+/* legacy — kept for Rainfall page */
+.product-overlay-features {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    width: 35%;
+    flex-shrink: 0;
+}
+
+.product-coming-soon-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 20px;
+    padding: 0.3rem 0.9rem;
+}
+
+.product-hero-title {
+    font-family: 'Friz Quadrata Std', 'Georgia', serif;
+    font-size: clamp(3.5rem, 8vw, 6rem);
+    font-weight: 700;
+    color: #dce8f0;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    margin: 0;
+    text-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+}
+
+.product-hero-sub {
+    font-size: 1.2rem;
+    color: rgba(255, 255, 255, 0.65);
+    font-weight: 400;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin: 0;
+}
+
+.product-editorial {
+    padding: 7rem 15% 8rem;
+    max-width: 100%;
+}
+
+.product-editorial-headline {
+    font-family: 'Friz Quadrata Std', 'Georgia', serif;
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 700;
+    color: var(--lp-text);
+    line-height: 1.2;
+    max-width: 700px;
+    margin-bottom: 2.5rem;
+}
+
+.product-editorial-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    max-width: 680px;
+    margin-bottom: 4rem;
+}
+
+.product-editorial-body p {
+    font-size: 1.1rem;
+    color: var(--lp-text-muted);
+    line-height: 1.8;
+}
+
+.product-editorial-features {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+}
+
+.product-feature-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 1.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.product-feature-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--lp-text);
+    letter-spacing: 0.02em;
+}
+
+.product-feature-desc {
+    font-size: 0.9rem;
+    color: var(--lp-text-muted);
+    line-height: 1.6;
+    margin: 0;
+}
+
+@media (max-width: 768px) {
+    .product-editorial {
+        padding: 5rem 1.5rem 6rem;
+    }
+
+    .product-editorial-features {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* ── Team Section ─────────────────────────────────────────── */

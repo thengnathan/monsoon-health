@@ -3,7 +3,9 @@ import { useState, useEffect, useRef } from 'react';
 type DropdownKey = 'products' | 'company' | null;
 import '../landing.css';
 
-export default function AboutPage() {
+export default function ZephyrPage() {
+    const [email, setEmail] = useState('');
+    const [submitted, setSubmitted] = useState(false);
     const [scrolled, setScrolled] = useState(false);
     const [openDropdown, setOpenDropdown] = useState<DropdownKey>(null);
     const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -33,12 +35,17 @@ export default function AboutPage() {
                     }
                 });
             },
-            { threshold: 0.15 }
+            { threshold: 0.12 }
         );
 
         document.querySelectorAll('.scroll-animate').forEach((el) => observer.observe(el));
         return () => observer.disconnect();
     }, []);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (email) setSubmitted(true);
+    };
 
     return (
         <div className="landing-page">
@@ -83,85 +90,82 @@ export default function AboutPage() {
                 </div>
             </nav>
 
-            {/* ── About Hero ── */}
-            <section className="about-hero">
-                <img
-                    className="about-hero-img"
-                    src="/images/Company_Background.png"
-                    alt="Monsoon Health team"
-                />
-                <div className="about-hero-fade" />
-                <div className="about-hero-people-text">
-                    <h1 className="product-hero-title">Born in the Research Site</h1>
-                    <p className="product-hero-sub">Former clinical research coordinators building what they once needed</p>
-                </div>
+            {/* ── Hero ── */}
+            <section className="product-hero product-hero-full">
+                <img className="product-hero-img" src="/images/Zephyr_Background.png" alt="Zephyr" />
+                <div className="product-hero-fade product-hero-fade-full" />
                 <div className={`scroll-indicator ${scrolled ? 'scroll-indicator-hidden' : ''}`}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                         <path d="M6 9l6 6 6-6" />
                     </svg>
                 </div>
+                <div className="product-hero-center">
+                    <h1 className="product-hero-title">Zephyr</h1>
+                    <p className="product-hero-sub">Clinical Site Patient Tracker</p>
+                    <span className="product-coming-soon-badge">Coming Soon</span>
+                </div>
             </section>
 
-            {/* ── Editorial Block ── */}
-            <section className="about-editorial">
-                <h2 className="editorial-headline scroll-animate scroll-fade-up">
-                    Clinical trials still lose patients to paperwork
-                </h2>
-                <div className="editorial-body scroll-animate scroll-fade-up" style={{ transitionDelay: '0.1s' }}>
-                    <p>Every year, 80% of clinical trials fail to meet enrollment deadlines. Sites drown in spreadsheets, fax machines, and disconnected systems. Patients who need experimental treatments the most, those in rural and underserved communities, fall through the cracks before screening even begins.</p>
-                    <p>The problem is structural. Clinical research sites run on fragmented workflows built for a different era. Coordinators spend more time on data entry than on patient care. The result are slower trials, higher costs, and entire populations left out of medical progress.</p>
+            {/* ── Feature Section ── */}
+            <section className="zephyr-features-section scroll-animate scroll-fade-up">
+                <div className="zephyr-features-header">
+                    <p className="zephyr-features-kicker">Designed around how coordinators actually work, not how regulators wish they did.</p>
+                    <h2 className="zephyr-features-headline">Every patient, every site, always in view</h2>
+                    <p className="zephyr-features-desc">
+                        Zephyr gives clinical research coordinators a single, real-time view of every patient across every active trial. From screening through follow-up, nothing slips through the cracks — visit schedules, protocol deviations, and outstanding tasks surface automatically.
+                    </p>
                 </div>
-                <div className="editorial-mission scroll-animate scroll-fade-up" style={{ transitionDelay: '0.2s' }}>
-                    <p>Monsoon Health exists to fix clinical trial operations from the ground up. We believe trial access is a systems problem, not a patient problem. Our platform handles compliant screening, onboarding, and lifecycle management for research sites, CROs, and Sponsors, so clinical research teams spend their time where it matters, with patients.</p>
-                </div>
-                <p className="editorial-tagline scroll-animate scroll-fade-up" style={{ transitionDelay: '0.3s' }}>
-                    Trial infrastructure is mission-critical,<br />but shouldn't consume your site's bandwidth. That's why it's ours.
-                </p>
-            </section>
-
-            {/* ── Divider ── */}
-            <div className="landing-divider" style={{ marginTop: '0', marginBottom: '4rem' }} />
-
-            {/* ── Team Section ── */}
-            <section className="landing-team">
-                <h2 className="team-heading scroll-animate scroll-fade-up">Our Team</h2>
-                <p className="team-subtitle scroll-animate scroll-fade-up" style={{ transitionDelay: '0.1s' }}>Ashman, Nathan, and Amin met while working together as clinical research coordinators on hepatology and liver cirrhosis clinical trials, where they developed deep expertise in clinical operations and health technology. Together, they bring strong experience at the intersection of research execution and digital health innovation.</p>
-                <div className="team-cards">
-                    {/* Founder 1 */}
-                    <div className="founder-card scroll-animate scroll-fade-up" style={{ transitionDelay: '0s' }}>
-                        <div className="founder-card-top">
-                            <img className="founder-photo" src="/images/Ashman.png" alt="Ashman Dosanjh" />
+                <div className="zephyr-feature-cards">
+                    <div className="zephyr-feature-card">
+                        <div className="zephyr-feature-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
                         </div>
-                        <div className="founder-card-info">
-                            <p className="founder-name">Ashman Dosanjh</p>
-                            <p className="founder-title">Co-Founder</p>
-                        </div>
+                        <span className="zephyr-feature-title">Real-Time Tracking</span>
+                        <p className="zephyr-feature-desc">Live status on every enrolled patient across all active protocols. No spreadsheets, no lag.</p>
                     </div>
-
-                    {/* Founder 2 */}
-                    <div className="founder-card scroll-animate scroll-fade-up" style={{ transitionDelay: '0.15s' }}>
-                        <div className="founder-card-top">
-                            <img className="founder-photo" src="/images/Nathan.png" alt="Nathan Theng" />
+                    <div className="zephyr-feature-card">
+                        <div className="zephyr-feature-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
                         </div>
-                        <div className="founder-card-info">
-                            <p className="founder-name">Nathan Theng</p>
-                            <p className="founder-title">Co-Founder</p>
-                        </div>
+                        <span className="zephyr-feature-title">Visit Management</span>
+                        <p className="zephyr-feature-desc">Automated visit scheduling, reminders, and compliance flags so nothing falls through.</p>
                     </div>
-
-                    {/* Founder 3 */}
-                    <div className="founder-card scroll-animate scroll-fade-up" style={{ transitionDelay: '0.3s' }}>
-                        <div className="founder-card-top">
-                            <img className="founder-photo" src="/images/Amin.png" alt="Amin Joseph" />
+                    <div className="zephyr-feature-card">
+                        <div className="zephyr-feature-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                            </svg>
                         </div>
-                        <div className="founder-card-info">
-                            <p className="founder-name">Amin Joseph</p>
-                            <p className="founder-title">Co-Founder</p>
-                        </div>
+                        <span className="zephyr-feature-title">Site-Ready</span>
+                        <p className="zephyr-feature-desc">Built for how sites actually operate — not retrofitted from a sponsor or CRO tool.</p>
                     </div>
                 </div>
             </section>
 
+            {/* ── CTA ── */}
+            <section className="zephyr-cta-section scroll-animate scroll-fade-up">
+                <h2 className="zephyr-cta-headline">Request Early Access</h2>
+                <p className="zephyr-cta-sub">Zephyr is currently in development. Join the waitlist and be first to know when we launch.</p>
+                {submitted ? (
+                    <p className="zephyr-cta-confirm">You're on the list — we'll be in touch.</p>
+                ) : (
+                    <form className="zephyr-cta-form" onSubmit={handleSubmit}>
+                        <input
+                            className="zephyr-cta-input"
+                            type="email"
+                            placeholder="your@email.com"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                        />
+                        <button className="landing-btn-primary" type="submit">Join Waitlist</button>
+                    </form>
+                )}
+            </section>
 
         </div>
     );

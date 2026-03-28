@@ -85,12 +85,12 @@ export default function LandingPage() {
                         >
                             <div className="landing-dropdown-col">
                                 <span className="landing-dropdown-col-header">Products</span>
-                                <div className="landing-dropdown-item">
+                                <div className="landing-dropdown-item" onClick={() => window.location.href = '/products/zephyr'}>
                                     <span className="landing-dropdown-name">Zephyr</span>
                                     <span className="landing-dropdown-desc">Clinical Site Patient Tracker</span>
                                     <span className="landing-dropdown-coming-soon">Coming Soon</span>
                                 </div>
-                                <div className="landing-dropdown-item">
+                                <div className="landing-dropdown-item" onClick={() => window.location.href = '/products/rainfall'}>
                                     <span className="landing-dropdown-name">Rainfall</span>
                                     <span className="landing-dropdown-desc">Agentic EDC</span>
                                     <span className="landing-dropdown-coming-soon">Coming Soon</span>
