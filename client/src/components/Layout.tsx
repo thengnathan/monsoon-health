@@ -53,11 +53,8 @@ export default function Layout() {
         <div className="app-layout">
             <aside className="sidebar">
                 <div className="sidebar-brand">
-                    <h2>
-                        <span className="sidebar-brand-icon">M</span>
-                        Monsoon Health
-                    </h2>
-                    <span>Screening Tracker</span>
+                    <img src="/images/monsoon-braid-wordmark-white.svg" alt="Monsoon Health" className="sidebar-brand-wordmark" />
+                    <span>Zephyr - Screening Tracker</span>
                 </div>
 
                 <nav className="sidebar-nav">

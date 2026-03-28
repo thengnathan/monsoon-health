@@ -3,6 +3,7 @@
    ╚══════════════════════════════════════════════════════════════╝ */
 
 @import url('https://fonts.cdnfonts.com/css/friz-quadrata-std');
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@700&display=swap');
 
 /* ── Reset & Base ─────────────────────────────────────────── */
 .landing-page {
@@ -34,10 +35,10 @@
     align-items: center;
     justify-content: space-between;
     padding: 1rem 3rem;
-    background: rgba(10, 20, 30, 0.35);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(136, 189, 223, 0.06);
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-bottom: none;
 }
 
 .landing-nav-brand {
@@ -50,10 +51,13 @@
     letter-spacing: -0.02em;
 }
 
-.landing-nav-logo {
-    width: 28px;
-    height: 28px;
-    color: var(--lp-accent);
+.landing-nav-brand span {
+    font-family: 'Sora', sans-serif;
+}
+
+.landing-nav-wordmark {
+    height: 56px;
+    width: auto;
 }
 
 .landing-nav-center {
@@ -88,7 +92,7 @@
 }
 
 .landing-nav-links a {
-    color: var(--lp-text-muted);
+    color: #ffffff;
     text-decoration: none;
     font-size: 0.9rem;
     font-weight: 500;
@@ -103,7 +107,7 @@
 .landing-nav-link {
     background: none;
     border: none;
-    color: var(--lp-text-muted);
+    color: rgba(255, 255, 255, 0.85);
     font-family: inherit;
     font-size: 1rem;
     font-weight: 500;
@@ -195,6 +199,19 @@
     font-size: 0.8rem;
     color: var(--lp-text-muted);
     line-height: 1.4;
+}
+
+.landing-dropdown-coming-soon {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    padding: 0.1rem 0.45rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    align-self: flex-start;
 }
 
 .landing-nav-cta {
@@ -309,6 +326,45 @@
     align-items: center;
     justify-content: center;
     gap: 1.2rem;
+}
+
+/* ── macOS Window ─────────────────────────────────────────── */
+.macos-window {
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.02);
+    backdrop-filter: blur(1.5px);
+    -webkit-backdrop-filter: blur(1.5px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    box-shadow:
+        0 8px 40px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+    margin-bottom: 1rem;
+}
+
+.macos-window-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.macos-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.macos-dot-red    { background: #ff5f57; box-shadow: 0 0 4px rgba(255, 95, 87, 0.6); }
+.macos-dot-yellow { background: #ffbd2e; box-shadow: 0 0 4px rgba(255, 189, 46, 0.6); }
+.macos-dot-green  { background: #28c840; box-shadow: 0 0 4px rgba(40, 200, 64, 0.6); }
+
+.macos-window-body {
+    padding: 5rem 3rem 2.5rem;
 }
 
 /* ── Glitch Title Animation ───────────────────────────────── */

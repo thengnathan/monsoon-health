@@ -66,12 +66,7 @@ export default function LandingPage() {
             {/* ── Navbar ── */}
             <nav className="landing-nav">
                 <div className="landing-nav-brand">
-                    <svg className="landing-nav-logo" viewBox="0 0 32 32" fill="none">
-                        <circle cx="16" cy="16" r="14" stroke="currentColor" strokeWidth="2" />
-                        <path d="M16 6 C16 6, 10 16, 10 20 C10 23.3 12.7 26 16 26 C19.3 26 22 23.3 22 20 C22 16 16 6 16 6Z" fill="currentColor" opacity="0.7" />
-                        <path d="M16 10 C16 10, 12 17, 12 19.5 C12 22 13.8 24 16 24 C18.2 24 20 22 20 19.5 C20 17 16 10 16 10Z" fill="currentColor" opacity="0.4" />
-                    </svg>
-                    <span>Monsoon Health</span>
+                    <img src="/images/monsoon-braid-wordmark-white.svg" className="landing-nav-wordmark" alt="Monsoon Health" />
                 </div>
 
                 <div className="landing-nav-center">
@@ -89,14 +84,16 @@ export default function LandingPage() {
                             onMouseLeave={scheduleClose}
                         >
                             <div className="landing-dropdown-col">
-                                <span className="landing-dropdown-col-header">Product</span>
+                                <span className="landing-dropdown-col-header">Products</span>
                                 <div className="landing-dropdown-item">
                                     <span className="landing-dropdown-name">Zephyr</span>
                                     <span className="landing-dropdown-desc">Clinical Site Patient Tracker</span>
+                                    <span className="landing-dropdown-coming-soon">Coming Soon</span>
                                 </div>
                                 <div className="landing-dropdown-item">
                                     <span className="landing-dropdown-name">Rainfall</span>
                                     <span className="landing-dropdown-desc">Agentic EDC</span>
+                                    <span className="landing-dropdown-coming-soon">Coming Soon</span>
                                 </div>
                             </div>
                         </div>
@@ -147,17 +144,26 @@ export default function LandingPage() {
                 </div>
 
                 <div className="landing-hero-content">
-                    <h1 className="glitch" data-text="Monsoon Health">
-                        <span className="glitch-text">Monsoon Health</span>
-                    </h1>
-                    <p className="landing-hero-sub">
-                        {displayText}
-                        <span className={`typing-cursor ${showCursor ? '' : 'typing-cursor-hidden'}`}>|</span>
-                    </p>
-                    <div className="landing-hero-actions">
-                        <button className="landing-btn-primary">
-                            Get Started
-                        </button>
+                    <div className="macos-window">
+                        <div className="macos-window-titlebar">
+                            <span className="macos-dot macos-dot-red" />
+                            <span className="macos-dot macos-dot-yellow" />
+                            <span className="macos-dot macos-dot-green" />
+                        </div>
+                        <div className="macos-window-body">
+                            <h1 className="glitch" data-text="Monsoon Health">
+                                <span className="glitch-text">Monsoon Health</span>
+                            </h1>
+                            <p className="landing-hero-sub">
+                                {displayText}
+                                <span className={`typing-cursor ${showCursor ? '' : 'typing-cursor-hidden'}`}>|</span>
+                            </p>
+                            <div className="landing-hero-actions">
+                                <button className="landing-btn-primary">
+                                    Get Started
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>

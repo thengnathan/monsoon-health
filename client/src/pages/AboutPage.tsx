@@ -24,12 +24,7 @@ export default function AboutPage() {
             {/* ── Navbar ── */}
             <nav className="landing-nav">
                 <a href="/landing" className="landing-nav-brand" style={{ textDecoration: 'none' }}>
-                    <svg className="landing-nav-logo" viewBox="0 0 32 32" fill="none">
-                        <circle cx="16" cy="16" r="14" stroke="currentColor" strokeWidth="2" />
-                        <path d="M16 6 C16 6, 10 16, 10 20 C10 23.3 12.7 26 16 26 C19.3 26 22 23.3 22 20 C22 16 16 6 16 6Z" fill="currentColor" opacity="0.7" />
-                        <path d="M16 10 C16 10, 12 17, 12 19.5 C12 22 13.8 24 16 24 C18.2 24 20 22 20 19.5 C20 17 16 10 16 10Z" fill="currentColor" opacity="0.4" />
-                    </svg>
-                    <span>Monsoon Health</span>
+                    <img src="/images/monsoon-braid-wordmark-white.svg" alt="Monsoon Health" className="landing-nav-wordmark" />
                 </a>
                 <div className="landing-nav-links">
                     <button className="landing-nav-cta" onClick={() => window.location.href = '/landing'}>
