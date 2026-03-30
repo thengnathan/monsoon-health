@@ -4,6 +4,16 @@
    Warm neutrals + a singular teal accent.
    ============================================================ */
 
+/* --- Page Transitions --- */
+.page-transition {
+    animation: page-fade-in 0.35s ease both;
+}
+
+@keyframes page-fade-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
 /* --- Reset & Base --- */
 *,
 *::before,

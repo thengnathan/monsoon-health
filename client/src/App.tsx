@@ -1,5 +1,5 @@
 import { useState, useEffect, createContext, useContext } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ClerkProvider, useUser } from '@clerk/clerk-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
@@ -18,6 +18,7 @@ import LandingPage from './pages/LandingPage';
 import AboutPage from './pages/AboutPage';
 import ZephyrPage from './pages/ZephyrPage';
 import RainfallPage from './pages/RainfallPage';
+import ContactPage from './pages/ContactPage';
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
 
@@ -147,13 +148,24 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
 }
 
+function PageWrapper({ children }: { children: React.ReactNode }) {
+    const location = useLocation();
+    return (
+        <div key={location.pathname} className="page-transition">
+            {children}
+        </div>
+    );
+}
+
 function AppRoutes() {
     return (
+        <PageWrapper>
         <Routes>
             <Route path="/landing" element={<LandingPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/products/zephyr" element={<ZephyrPage />} />
             <Route path="/products/rainfall" element={<RainfallPage />} />
+            <Route path="/contact" element={<ContactPage />} />
             <Route path="/login/*" element={<LoginPage />} />
             <Route path="/sign-up/*" element={<SignUpPage />} />
             <Route path="/" element={
@@ -170,6 +182,7 @@ function AppRoutes() {
             </Route>
             <Route path="*" element={<Navigate to="/landing" />} />
         </Routes>
+        </PageWrapper>
     );
 }
 

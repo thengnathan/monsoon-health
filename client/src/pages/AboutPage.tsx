@@ -79,7 +79,7 @@ export default function AboutPage() {
                     </div>
                 </div>
                 <div className="landing-nav-links">
-                    <button className="landing-nav-cta">Schedule a Demo</button>
+                    <button className="landing-nav-cta" onClick={() => window.location.href = '/contact'}>Schedule a Demo</button>
                 </div>
             </nav>
 

@@ -45,6 +45,7 @@ export default function LandingPage() {
         };
 
         const runAnimation = async () => {
+            await delay(1400); // wait for page + hero animations to finish
             while (!cancelled) {
                 for (const phrase of phrases) {
                     if (cancelled) return;
@@ -123,7 +124,7 @@ export default function LandingPage() {
                 </div>
 
                 <div className="landing-nav-links">
-                    <button className="landing-nav-cta">Schedule a Demo</button>
+                    <button className="landing-nav-cta" onClick={() => window.location.href = '/contact'}>Schedule a Demo</button>
                 </div>
             </nav>
 
@@ -150,7 +151,7 @@ export default function LandingPage() {
                                 <span className={`typing-cursor ${showCursor ? '' : 'typing-cursor-hidden'}`}>|</span>
                             </p>
                             <div className="landing-hero-actions">
-                                <button className="landing-btn-primary">
+                                <button className="landing-btn-primary" onClick={() => window.location.href = '/contact'}>
                                     Get Started
                                 </button>
                             </div>

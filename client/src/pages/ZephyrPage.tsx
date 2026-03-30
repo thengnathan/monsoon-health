@@ -42,9 +42,19 @@ export default function ZephyrPage() {
         return () => observer.disconnect();
     }, []);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (email) setSubmitted(true);
+        if (!email) return;
+        try {
+            const res = await fetch('http://localhost:3001/api/email/waitlist', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, product: 'Zephyr' }),
+            });
+            if (res.ok) setSubmitted(true);
+        } catch (err) {
+            console.error('Waitlist error:', err);
+        }
     };
 
     return (
@@ -86,7 +96,7 @@ export default function ZephyrPage() {
                     </div>
                 </div>
                 <div className="landing-nav-links">
-                    <button className="landing-nav-cta">Schedule a Demo</button>
+                    <button className="landing-nav-cta" onClick={() => window.location.href = '/contact'}>Schedule a Demo</button>
                 </div>
             </nav>
 
