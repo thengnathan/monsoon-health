@@ -3,7 +3,7 @@ import type {
     ScreeningCase, ScreeningCaseRow, ScreeningCaseDetail,
     SignalType, ScreenFailReason, ReferralSource, Note,
     PatientVisit, TodayData, UpcomingVisit, UploadResult,
-    EnrollResult, AddSignalResult, PendingItem,
+    EnrollResult, AddSignalResult, PendingItem, BatchImportResult,
 } from './types';
 
 const API_BASE = '/api';
@@ -155,6 +155,22 @@ export const api = {
     updatePatientVisit: (id: string, data: Record<string, unknown>) =>
         request<PatientVisit>(`/patient-visits/${id}`, { method: 'PATCH', body: data }),
     getUpcomingVisits: () => request<UpcomingVisit[]>('/upcoming-visits'),
+
+    // Patient Batch Import
+    batchImportPatients: async (file: File) => {
+        const token = localStorage.getItem('monsoon_clerk_token');
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const res = await fetch(`${API_BASE}/patients/batch-import`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error((data as { error?: string }).error || 'Batch import failed');
+        return data as BatchImportResult;
+    },
 
     // Patient Documents
     uploadPatientDocument: async (file: File, { patient_id, document_type }: { patient_id?: string; document_type?: string } = {}) => {

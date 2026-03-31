@@ -54,7 +54,7 @@ export default function Layout() {
             <aside className="sidebar">
                 <div className="sidebar-brand">
                     <img src="/images/monsoon-braid-wordmark-white.svg" alt="Monsoon Health" className="sidebar-brand-wordmark" />
-                    <span>Zephyr - Screening Tracker</span>
+                    <span>Zephyr - Screening Management</span>
                 </div>
 
                 <nav className="sidebar-nav">

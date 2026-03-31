@@ -305,7 +305,9 @@ button {
   width: 100%;
   height: auto;
   display: block;
-  margin-bottom: var(--space-1);
+  margin-bottom: var(--space-2);
+  transform: scale(1.1);
+  transform-origin: left center;
 }
 
 .sidebar-brand-icon {
@@ -321,7 +323,7 @@ button {
 
 .sidebar-brand span {
   color: var(--text-tertiary);
-  font-size: var(--font-xs);
+  font-size: var(--font-sm);
   font-weight: 400;
   display: block;
   margin-top: var(--space-1);

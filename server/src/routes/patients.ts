@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import pdfParse from 'pdf-parse';
+import * as XLSX from 'xlsx';
 import { authMiddleware, auditLog } from '../middleware/auth';
 import { extractPatientDocumentData } from '../services/aiIngestion';
 
@@ -15,6 +16,16 @@ const upload = multer({
         const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/tiff'];
         if (allowed.includes(file.mimetype)) cb(null, true);
         else cb(new Error('Only PDF and image files are accepted'));
+    }
+});
+
+const batchUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        const ext = file.originalname.split('.').pop()?.toLowerCase();
+        if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') cb(null, true);
+        else cb(new Error('Only Excel (.xlsx, .xls) and CSV files are accepted'));
     }
 });
 
@@ -134,6 +145,119 @@ router.post('/', async (req: Request, res: Response) => {
 
     const patient = (await db.query('SELECT * FROM patients WHERE id = $1', [id])).rows[0];
     res.status(201).json(patient);
+});
+
+router.post('/batch-import', batchUpload.single('file'), async (req: Request, res: Response) => {
+    try {
+        const db = req.app.locals.db;
+        if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
+
+        let rows: Record<string, string>[] = [];
+
+        const ext = req.file.originalname.split('.').pop()?.toLowerCase();
+        if (ext === 'csv') {
+            const text = req.file.buffer.toString('utf-8');
+            const lines = text.split(/\r?\n/).filter(l => l.trim());
+            if (lines.length < 2) { res.status(400).json({ error: 'CSV has no data rows' }); return; }
+            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase().replace(/\s+/g, '_'));
+            rows = lines.slice(1).map(line => {
+                const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+                const row: Record<string, string> = {};
+                headers.forEach((h, i) => { row[h] = vals[i] || ''; });
+                return row;
+            }).filter(r => Object.values(r).some(v => v));
+        } else {
+            const workbook = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+            rows = rawRows.map(r => {
+                const norm: Record<string, string> = {};
+                for (const [k, v] of Object.entries(r)) {
+                    const key = k.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+                    norm[key] = v instanceof Date
+                        ? v.toISOString().split('T')[0]
+                        : String(v ?? '').trim();
+                }
+                return norm;
+            });
+        }
+
+        const colAliases: Record<string, string[]> = {
+            first_name: ['first_name', 'firstname', 'first'],
+            last_name: ['last_name', 'lastname', 'last', 'surname'],
+            dob: ['dob', 'date_of_birth', 'dateofbirth', 'birth_date', 'birthdate'],
+            internal_identifier: ['internal_identifier', 'mrn', 'id', 'patient_id', 'patientid', 'internal_id'],
+            referral_date: ['referral_date', 'referraldate'],
+            notes: ['notes', 'note', 'comments'],
+        };
+
+        const resolveField = (row: Record<string, string>, field: string): string => {
+            for (const alias of (colAliases[field] || [field])) {
+                if (row[alias] !== undefined && row[alias] !== '') return row[alias];
+            }
+            return '';
+        };
+
+        const created: { id: string; first_name: string; last_name: string }[] = [];
+        const skipped: { row: number; reason: string }[] = [];
+        const errors: { row: number; error: string }[] = [];
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const rowNum = i + 2;
+            const firstName = resolveField(row, 'first_name');
+            const lastName = resolveField(row, 'last_name');
+            const dob = resolveField(row, 'dob');
+            const internalId = resolveField(row, 'internal_identifier');
+
+            if (!firstName || !lastName) {
+                errors.push({ row: rowNum, error: 'Missing first_name or last_name' });
+                continue;
+            }
+
+            // Check for duplicate by MRN
+            if (internalId) {
+                const existing = (await db.query(
+                    'SELECT id FROM patients WHERE site_id = $1 AND internal_identifier = $2',
+                    [req.user.site_id, internalId]
+                )).rows[0];
+                if (existing) {
+                    skipped.push({ row: rowNum, reason: `Patient with MRN "${internalId}" already exists` });
+                    continue;
+                }
+            }
+
+            // Parse dob - try common date formats
+            let parsedDob = dob || null;
+            if (dob) {
+                const d = new Date(dob);
+                if (!isNaN(d.getTime())) {
+                    parsedDob = d.toISOString().split('T')[0];
+                }
+            }
+
+            const id = uuidv4();
+            try {
+                await db.query(
+                    `INSERT INTO patients (id, site_id, first_name, last_name, dob, internal_identifier, referral_date, notes)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                    [id, req.user.site_id, firstName, lastName,
+                     parsedDob || null, internalId || null,
+                     resolveField(row, 'referral_date') || null,
+                     resolveField(row, 'notes') || null]
+                );
+                created.push({ id, first_name: firstName, last_name: lastName });
+                await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'patient', entityId: id, action: 'CREATE', diff: { source: 'batch_import', row: rowNum } as Record<string, unknown> });
+            } catch (e) {
+                errors.push({ row: rowNum, error: (e as Error).message });
+            }
+        }
+
+        res.status(201).json({ created: created.length, skipped: skipped.length, errors, created_patients: created, skipped_rows: skipped });
+    } catch (err) {
+        console.error('[Batch Import] Error:', err);
+        res.status(500).json({ error: 'Batch import failed' });
+    }
 });
 
 router.post('/upload-document', upload.single('file'), async (req: Request, res: Response) => {

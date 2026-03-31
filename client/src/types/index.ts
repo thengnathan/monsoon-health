@@ -322,6 +322,14 @@ export interface AddSignalResult {
     alerts_generated: number;
 }
 
+export interface BatchImportResult {
+    created: number;
+    skipped: number;
+    errors: { row: number; error: string }[];
+    created_patients: { id: string; first_name: string; last_name: string }[];
+    skipped_rows: { row: number; reason: string }[];
+}
+
 // ── Component-specific types ───────────────────────────────
 export type StatusKey =
     | 'NEW'
