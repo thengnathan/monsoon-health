@@ -1,10 +1,16 @@
 import { SignIn } from '@clerk/clerk-react';
-import StormyBackdrop from '../components/StormyBackdrop';
+import LiquidSilkBackground from '../components/LiquidSilkBackground';
 
 export default function LoginPage() {
     return (
         <div className="login-page">
-            <StormyBackdrop />
+            <LiquidSilkBackground
+                color="#5a8fa8"
+                speed={1.0}
+                scale={1.2}
+                noiseIntensity={0.4}
+                rotation={1.2}
+            />
             <div style={{ position: 'relative', zIndex: 10 }}>
                 <SignIn
                     routing="path"

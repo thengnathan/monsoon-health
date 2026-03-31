@@ -11,5 +11,10 @@ export default defineConfig({
                 changeOrigin: true
             }
         }
+    },
+    build: {
+        rollupOptions: {
+            external: (id) => id.startsWith('https://'),
+        }
     }
 })

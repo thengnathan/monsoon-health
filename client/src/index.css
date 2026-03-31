@@ -1103,7 +1103,7 @@ button {
   justify-content: center;
   min-height: 100vh;
   overflow: hidden;
-  background: #141e28;
+  background: transparent;
 }
 
 .login-card {
