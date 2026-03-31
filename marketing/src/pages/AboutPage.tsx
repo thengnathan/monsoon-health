@@ -6,6 +6,7 @@ import '../landing.css';
 export default function AboutPage() {
     const [scrolled, setScrolled] = useState(false);
     const [openDropdown, setOpenDropdown] = useState<DropdownKey>(null);
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const openMenu = (key: DropdownKey) => {
@@ -79,9 +80,43 @@ export default function AboutPage() {
                     </div>
                 </div>
                 <div className="landing-nav-links">
-                    <button className="landing-nav-cta" onClick={() => window.location.href = '/contact'}>Schedule a Demo</button>
+                    <button className="landing-nav-cta landing-nav-cta-desktop" onClick={() => window.location.href = '/contact'}>Schedule a Demo</button>
+                    <button className="landing-nav-hamburger" onClick={() => setMobileMenuOpen(o => !o)} aria-label="Menu">
+                        <span className={`hamburger-bar ${mobileMenuOpen ? 'open' : ''}`} />
+                        <span className={`hamburger-bar ${mobileMenuOpen ? 'open' : ''}`} />
+                        <span className={`hamburger-bar ${mobileMenuOpen ? 'open' : ''}`} />
+                    </button>
                 </div>
             </nav>
+
+            {/* Mobile Menu Drawer */}
+            {mobileMenuOpen && (
+                <div className="mobile-menu-overlay" onClick={() => setMobileMenuOpen(false)}>
+                    <div className="mobile-menu" onClick={e => e.stopPropagation()}>
+                        <div className="mobile-menu-section">
+                            <div className="mobile-menu-label">Products</div>
+                            <a className="mobile-menu-item" href="/products/zephyr">
+                                <span className="mobile-menu-item-name">Zephyr</span>
+                                <span className="mobile-menu-item-desc">Clinical Research Patient Monitoring</span>
+                            </a>
+                            <a className="mobile-menu-item" href="/products/rainfall">
+                                <span className="mobile-menu-item-name">Rainfall</span>
+                                <span className="mobile-menu-item-desc">Agentic EDC</span>
+                            </a>
+                        </div>
+                        <div className="mobile-menu-section">
+                            <div className="mobile-menu-label">Company</div>
+                            <a className="mobile-menu-item" href="/about">
+                                <span className="mobile-menu-item-name">About</span>
+                                <span className="mobile-menu-item-desc">Our mission and team</span>
+                            </a>
+                        </div>
+                        <button className="landing-btn-primary mobile-menu-cta" onClick={() => window.location.href = '/contact'}>
+                            Schedule a Demo
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* ── About Hero ── */}
             <section className="about-hero">
