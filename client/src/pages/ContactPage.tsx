@@ -98,7 +98,7 @@ export default function ContactPage() {
                                     <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
                                 <h3>We'll be in touch soon.</h3>
-                                <p>Thanks for reaching out — our team will contact you within one business day.</p>
+                                <p style={{ color: '#ffffff' }}>Thanks for reaching out — our team will contact you within three business days.</p>
                             </div>
                         ) : (
                             <form className="contact-form" onSubmit={handleSubmit}>

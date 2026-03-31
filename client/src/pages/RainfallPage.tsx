@@ -51,7 +51,7 @@ export default function RainfallPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, product: 'Rainfall' }),
             });
-            if (res.ok) setSubmitted(true);
+            if (res.ok) { setSubmitted(true); setEmail(''); }
         } catch (err) {
             console.error('Waitlist error:', err);
         }
@@ -160,21 +160,23 @@ export default function RainfallPage() {
             <section className="zephyr-cta-section scroll-animate scroll-fade-up">
                 <h2 className="zephyr-cta-headline">Request Early Access</h2>
                 <p className="zephyr-cta-sub">Rainfall is currently in development. Join the waitlist and be first to know when we launch.</p>
-                {submitted ? (
-                    <p className="zephyr-cta-confirm">You're on the list — we'll be in touch.</p>
-                ) : (
-                    <form className="zephyr-cta-form" onSubmit={handleSubmit}>
-                        <input
-                            className="zephyr-cta-input"
-                            type="email"
-                            placeholder="your@email.com"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            required
-                        />
-                        <button className="landing-btn-primary" type="submit">Join Waitlist</button>
-                    </form>
-                )}
+                <form className="zephyr-cta-form" onSubmit={handleSubmit}>
+                    <input
+                        className="zephyr-cta-input"
+                        type="email"
+                        placeholder="your@email.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        disabled={submitted}
+                    />
+                    <button className={`waitlist-btn ${submitted ? 'waitlist-btn--success' : ''}`} type="submit" disabled={submitted}>
+                        <span className="waitlist-btn-label">Join Waitlist</span>
+                        <svg className="waitlist-btn-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                    </button>
+                </form>
             </section>
 
         </div>

@@ -88,7 +88,7 @@ export default function LandingPage() {
                                 <span className="landing-dropdown-col-header">Products</span>
                                 <div className="landing-dropdown-item" onClick={() => window.location.href = '/products/zephyr'}>
                                     <span className="landing-dropdown-name">Zephyr</span>
-                                    <span className="landing-dropdown-desc">Clinical Site Patient Tracker</span>
+                                    <span className="landing-dropdown-desc">Clinical Research Patient Monitoring System</span>
                                     <span className="landing-dropdown-coming-soon">Coming Soon</span>
                                 </div>
                                 <div className="landing-dropdown-item" onClick={() => window.location.href = '/products/rainfall'}>

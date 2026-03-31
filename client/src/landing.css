@@ -628,6 +628,84 @@
     }
 }
 
+/* ── Waitlist button ──────────────────────────────────────── */
+.waitlist-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 0.85rem 2.2rem;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    min-width: 148px;
+    height: 52px;
+    transition:
+        min-width 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+        border-radius 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+        background 0.35s ease,
+        border-color 0.35s ease,
+        transform 0.3s ease;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.waitlist-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.25);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+}
+
+.waitlist-btn--success {
+    min-width: 52px;
+    border-radius: 50%;
+    background: rgba(136, 189, 223, 0.15);
+    border-color: rgba(136, 189, 223, 0.5);
+    box-shadow: 0 0 16px rgba(136, 189, 223, 0.2);
+    cursor: default;
+    transform: none;
+    color: #88BDDF;
+}
+
+.waitlist-btn-label {
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    white-space: nowrap;
+}
+
+.waitlist-btn--success .waitlist-btn-label {
+    opacity: 0;
+    transform: scale(0.6);
+    position: absolute;
+}
+
+.waitlist-btn-check {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    opacity: 0;
+    stroke-dasharray: 30;
+    stroke-dashoffset: 30;
+    transition: opacity 0.1s ease;
+}
+
+.waitlist-btn--success .waitlist-btn-check {
+    opacity: 1;
+    animation: draw-check 0.35s ease 0.3s forwards;
+}
+
+@keyframes draw-check {
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
 /* ── Buttons ──────────────────────────────────────────────── */
 .landing-btn-primary {
     background: rgba(255, 255, 255, 0.1);
