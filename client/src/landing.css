@@ -979,7 +979,9 @@
     }
 
     .glitch {
-        font-size: clamp(2rem, 10vw, 3.5rem);
+        font-size: clamp(1.6rem, 8vw, 3.5rem);
+        word-break: break-word;
+        overflow-wrap: break-word;
     }
 
     .landing-hero-sub {
@@ -1029,6 +1031,11 @@
 
     .team-cards {
         flex-direction: column;
+        align-items: center;
+    }
+    .founder-card {
+        width: 100%;
+        max-width: 360px;
     }
 }
 
@@ -2027,11 +2034,35 @@
     }
     .macos-window {
         border-radius: 14px;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+    .landing-hero-content {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        padding: 0 1.2rem;
     }
 
     /* About editorial */
     .about-editorial {
         padding: 3.5rem 1.25rem 4rem;
+    }
+
+    /* About hero — reframe image to show people */
+    .about-hero-img {
+        object-position: 46% center;
+    }
+
+    /* About hero title — allow wrapping on mobile */
+    .about-hero-people-text .product-hero-title {
+        white-space: normal;
+        font-size: clamp(2rem, 8vw, 3.5rem);
+        padding: 0 1rem;
+    }
+    .product-hero-title {
+        font-size: clamp(2rem, 8vw, 6rem);
     }
 
     /* Team section */
