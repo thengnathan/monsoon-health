@@ -1,7 +1,7 @@
 {
-  "name": "willowbark-server",
+  "name": "monsoon-health-server",
   "version": "1.0.0",
-  "description": "Clinical Trial Screening State Tracker — Backend API",
+  "description": "Monsoon Health — Backend API",
   "main": "dist/index.js",
   "scripts": {
     "start": "node dist/index.js",
