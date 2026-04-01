@@ -13,6 +13,13 @@ export default function LandingPage() {
 
     const [openDropdown, setOpenDropdown] = useState<DropdownKey>(null);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [scrolled, setScrolled] = useState(false);
+
+    useEffect(() => {
+        const onScroll = () => setScrolled(window.scrollY > 20);
+        window.addEventListener('scroll', onScroll, { passive: true });
+        return () => window.removeEventListener('scroll', onScroll);
+    }, []);
     const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const openMenu = (key: DropdownKey) => {
@@ -66,7 +73,7 @@ export default function LandingPage() {
     return (
         <div className="landing-page">
             {/* ── Navbar ── */}
-            <nav className="landing-nav">
+            <nav className={`landing-nav${scrolled ? ' landing-nav--scrolled' : ''}`}>
                 <div className="landing-nav-brand">
                     <img src="/images/monsoon-braid-wordmark-white.svg" className="landing-nav-wordmark" alt="Monsoon Health" />
                 </div>

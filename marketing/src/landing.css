@@ -41,6 +41,14 @@
     border-bottom: none;
 }
 
+.landing-nav--scrolled {
+    background: rgba(10, 20, 30, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(136, 189, 223, 0.1);
+    transition: background 0.3s ease, border-color 0.3s ease;
+}
+
 .landing-nav-brand {
     display: flex;
     align-items: center;
