@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import DOMPurify from 'dompurify';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
@@ -43,7 +44,7 @@ function boldThresholds(html: string) {
 
 function criteriaToHtml(raw: string): string {
     if (!raw.trim()) return '';
-    if (/<(?:ol|ul|li|p|div|strong|em|br)\b/i.test(raw)) return raw;
+    if (/<(?:ol|ul|li|p|div|strong|em|br)\b/i.test(raw)) return DOMPurify.sanitize(raw);
 
     const text = raw
         .replace(/([.!?:])\s+(\d{1,2}[.)]\s)/g, '$1\n$2')

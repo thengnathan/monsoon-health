@@ -32,12 +32,13 @@ async function authMiddleware(req, res, next) {
             const name = payload.name || 'New User';
 
             await db.query(
-                `INSERT INTO users (id, site_id, name, email, password_hash, role, clerk_id)
-                 VALUES ($1, 'site-001', $2, $3, 'clerk-managed', 'CRC', $4)`,
+                `INSERT INTO users (id, site_id, name, email, password_hash, role, clerk_id, is_active)
+                 VALUES ($1, 'site-001', $2, $3, 'clerk-managed', 'CRC', $4, false)
+                 ON CONFLICT DO NOTHING`,
                 [id, name, email, clerkUserId]
             );
 
-            user = (await db.query('SELECT * FROM users WHERE id = $1', [id])).rows[0];
+            return res.status(403).json({ error: 'Account pending administrator approval' });
         }
 
         req.user = {

@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
--- IVFFlat index for fast approximate nearest-neighbour search
+-- IVFFlat index for fast approximate nearest-neighbour search1
 -- (Run AFTER inserting enough rows — at least a few hundred for good results)
 CREATE INDEX IF NOT EXISTS document_chunks_embedding_idx
     ON document_chunks

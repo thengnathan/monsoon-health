@@ -142,7 +142,7 @@ router.post('/', async (req: Request, res: Response) => {
         [id, req.user.site_id, first_name, last_name, dob, internal_identifier || null, referral_source_id || null, referral_date || null, notes || null]
     );
 
-    await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'patient', entityId: id, action: 'CREATE', diff: req.body });
+    await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'patient', entityId: id, action: 'CREATE', diff: { fields: Object.keys(req.body) } });
 
     const patient = (await db.query('SELECT * FROM patients WHERE id = $1', [id])).rows[0];
     res.status(201).json(patient);
@@ -321,7 +321,7 @@ router.post('/upload-document', upload.single('file'), async (req: Request, res:
                      'Auto-created from document upload. Please review and update.']
                 );
                 patientCreated = true;
-                await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'patient', entityId: finalPatientId, action: 'CREATE', diff: { source: 'document_upload', extracted } as Record<string, unknown> });
+                await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'patient', entityId: finalPatientId, action: 'CREATE', diff: { source: 'document_upload', fields: Object.keys(extracted) } as Record<string, unknown> });
             }
         }
 
@@ -493,7 +493,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
     values.push(req.params.id, req.user.site_id);
 
     await db.query(`UPDATE patients SET ${updates.join(', ')} WHERE id = $${++p} AND site_id = $${++p}`, values);
-    await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'patient', entityId: req.params.id, action: 'UPDATE', diff: req.body });
+    await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'patient', entityId: req.params.id, action: 'UPDATE', diff: { fields: Object.keys(req.body) } });
 
     const patient = (await db.query('SELECT * FROM patients WHERE id = $1', [req.params.id])).rows[0];
     res.json(patient);
