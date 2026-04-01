@@ -4,7 +4,8 @@ import multer from 'multer';
 import pdfParse from 'pdf-parse';
 import * as XLSX from 'xlsx';
 import { authMiddleware, auditLog } from '../middleware/auth';
-import { extractPatientDocumentData } from '../services/aiIngestion';
+import { extractPatientDocumentData, cleanPdfText } from '../services/aiIngestion';
+import { embedAndStoreDocument } from '../services/embeddings';
 
 const router = Router();
 router.use(authMiddleware);
@@ -362,6 +363,23 @@ router.post('/upload-document', upload.single('file'), async (req: Request, res:
 
         const patient = (await db.query('SELECT * FROM patients WHERE id = $1', [finalPatientId])).rows[0];
         res.status(201).json({ document_id: docId, patient, patient_created: patientCreated, extracted, signals_created: signalsCreated });
+
+        // Background: embed the document for RAG retrieval (non-blocking)
+        if (req.file.mimetype === 'application/pdf') {
+            (async () => {
+                try {
+                    const pdfData = await pdfParse(req.file!.buffer);
+                    const cleanedText = cleanPdfText(pdfData.text);
+                    await embedAndStoreDocument(db, docId, 'patient', req.user.site_id, cleanedText, {
+                        patient_id: finalPatientId,
+                        document_type: documentType,
+                        filename: req.file!.originalname,
+                    });
+                } catch (embErr) {
+                    console.error('[Document] Embedding failed (non-fatal):', embErr);
+                }
+            })();
+        }
     } catch (err) {
         console.error('[Document] Upload error:', err);
         res.status(500).json({ error: 'Upload failed' });

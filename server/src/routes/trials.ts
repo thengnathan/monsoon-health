@@ -5,6 +5,7 @@ import pdfParse from 'pdf-parse';
 import { authMiddleware, requireRole, auditLog } from '../middleware/auth';
 import { extractProtocolData, extractEligibilityCriteria, extractVisitSchedule, extractSignalRulesFromCriteria, cleanPdfText, type ExtractedVisit, type ExtractedSignalRule } from '../services/aiIngestion';
 import { runProtocolMatching } from '../services/patientMatching';
+import { embedAndStoreDocument } from '../services/embeddings';
 
 function extractCriteria(text: string): { inclusion: string | null; exclusion: string | null } {
     const result = { inclusion: null as string | null, exclusion: null as string | null };
@@ -327,6 +328,17 @@ router.post('/:id/protocol', requireRole('MANAGER', 'CRC'), upload.single('file'
                     aiExtracted.specialty || undefined
                 );
                 await upsertSignalRules(db, siteId, trialId, signalRules);
+
+                // Embed protocol for RAG retrieval
+                try {
+                    await embedAndStoreDocument(db, id, 'protocol', siteId, cleanedText, {
+                        trial_id: trialId,
+                        title: aiExtracted.title,
+                        sponsor: aiExtracted.sponsor,
+                    });
+                } catch (embErr) {
+                    console.error('[Protocol] Embedding failed (non-fatal):', embErr);
+                }
 
                 // Now run patient matching
                 console.log('[Protocol] Triggering patient matching job...');
