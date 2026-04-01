@@ -44,7 +44,7 @@ export default function AboutPage() {
     return (
         <div className="landing-page">
             {/* ── Navbar ── */}
-            <nav className="landing-nav">
+            <nav className={`landing-nav${scrolled ? ' landing-nav--scrolled' : ''}`}>
                 <a href="/landing" className="landing-nav-brand" style={{ textDecoration: 'none' }}>
                     <img src="/images/monsoon-braid-wordmark-white.svg" className="landing-nav-wordmark" alt="Monsoon Health" />
                 </a>
