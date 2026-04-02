@@ -198,4 +198,14 @@ export const api = {
     createNote: (data: Record<string, unknown>) => request<Note>('/notes', { method: 'POST', body: data }),
     updateNote: (id: string, data: Record<string, unknown>) => request<Note>(`/notes/${id}`, { method: 'PATCH', body: data }),
     deleteNote: (id: string) => request(`/notes/${id}`, { method: 'DELETE' }),
+
+    // Intake Submissions
+    getIntakeSubmissions: (status = 'PENDING') =>
+        request<Record<string, unknown>[]>(`/intake/submissions?status=${status}`),
+    getIntakeSubmission: (id: string) =>
+        request<Record<string, unknown>>(`/intake/submissions/${id}`),
+    convertIntakeSubmission: (id: string, overrides: Record<string, string> = {}) =>
+        request<{ patient: Patient; submission_id: string }>(`/intake/submissions/${id}/convert`, { method: 'POST', body: overrides }),
+    archiveIntakeSubmission: (id: string) =>
+        request(`/intake/submissions/${id}/archive`, { method: 'PATCH' }),
 };

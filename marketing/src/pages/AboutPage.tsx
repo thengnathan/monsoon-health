@@ -44,7 +44,7 @@ export default function AboutPage() {
     return (
         <div className="landing-page">
             {/* ── Navbar ── */}
-            <nav className={`landing-nav${scrolled ? ' landing-nav--scrolled' : ''}`}>
+            <nav className="landing-nav">
                 <a href="/landing" className="landing-nav-brand" style={{ textDecoration: 'none' }}>
                     <img src="/images/monsoon-braid-wordmark-white.svg" className="landing-nav-wordmark" alt="Monsoon Health" />
                 </a>
@@ -122,7 +122,7 @@ export default function AboutPage() {
             <section className="about-hero">
                 <img
                     className="about-hero-img"
-                    src="/images/Company_Background.png"
+                    src="/images/Company_Background4.png"
                     alt="Monsoon Health team"
                 />
                 <div className="about-hero-fade" />
@@ -160,7 +160,7 @@ export default function AboutPage() {
             {/* ── Team Section ── */}
             <section className="landing-team">
                 <h2 className="team-heading scroll-animate scroll-fade-up">Our Team</h2>
-                <p className="team-subtitle scroll-animate scroll-fade-up" style={{ transitionDelay: '0.1s' }}>Ashman, Nathan, and Amin met while working together as clinical research coordinators on hepatology and liver cirrhosis clinical trials, where they developed deep expertise in clinical operations and health technology. Together, they bring strong experience at the intersection of research execution and digital health innovation.</p>
+                <p className="team-subtitle scroll-animate scroll-fade-up" style={{ transitionDelay: '0.1s' }}>Ashman, Nathan, Amin, Simran met while working together as clinical research coordinators on hepatology and liver cirrhosis clinical trials, where they developed deep expertise in clinical operations and health technology. Together, they bring strong experience at the intersection of research execution and digital health innovation.</p>
                 <div className="team-cards">
                     {/* Founder 1 */}
                     <div className="founder-card scroll-animate scroll-fade-up" style={{ transitionDelay: '0s' }}>
@@ -194,6 +194,18 @@ export default function AboutPage() {
                             <p className="founder-title">Co-Founder</p>
                         </div>
                     </div>
+
+                    {/* Founder 4 */}
+                    <div className="founder-card scroll-animate scroll-fade-up" style={{ transitionDelay: '0.3s' }}>
+                        <div className="founder-card-top">
+                            <img className="founder-photo" src="/images/Simran.png" alt="Simran Bains" />
+                        </div>
+                        <div className="founder-card-info">
+                            <p className="founder-name">Simran Bains</p>
+                            <p className="founder-title">Co-Founder</p>
+                        </div>
+                    </div>
+
                 </div>
             </section>
 

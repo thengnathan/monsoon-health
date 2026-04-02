@@ -20,6 +20,7 @@ import usersRouter from './routes/users';
 import notesRouter from './routes/notes';
 import visitsRouter from './routes/visits';
 import emailRouter from './routes/email';
+import intakeRouter from './routes/intake';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -85,6 +86,7 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/notes', notesRouter);
 app.use('/api/email', emailRouter);
+app.use('/api/intake', intakeRouter);
 app.use('/api', visitsRouter);
 
 // Error handler

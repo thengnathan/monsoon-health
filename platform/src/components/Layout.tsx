@@ -14,6 +14,7 @@ const navItems: NavItem[] = [
     { to: '/screening', label: 'Screening Cases', icon: '◎' },
     { to: '/patients', label: 'Patients', icon: '◇' },
     { to: '/trials', label: 'Trials', icon: '△' },
+    { to: '/intake-submissions', label: 'Intake Forms', icon: '◫' },
     { to: '/notes', label: 'Notes', icon: '☰' },
 ];
 

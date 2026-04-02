@@ -14,6 +14,8 @@ import TrialDetailPage from './pages/TrialDetailPage';
 import ScreeningCasesPage from './pages/ScreeningCasesPage';
 import ScreeningCaseDetailPage from './pages/ScreeningCaseDetailPage';
 import NotesPage from './pages/NotesPage';
+import IntakeFormPage from './pages/IntakeFormPage';
+import IntakeSubmissionsPage from './pages/IntakeSubmissionsPage';
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
 
@@ -156,6 +158,9 @@ function AppRoutes() {
     return (
         <PageWrapper>
         <Routes>
+            {/* Public — no auth required */}
+            <Route path="/intake" element={<IntakeFormPage />} />
+
             <Route path="/login/*" element={<LoginPage />} />
             <Route path="/sign-up/*" element={<SignUpPage />} />
             <Route path="/" element={
@@ -169,6 +174,7 @@ function AppRoutes() {
                 <Route path="screening" element={<ScreeningCasesPage />} />
                 <Route path="screening/:id" element={<ScreeningCaseDetailPage />} />
                 <Route path="notes" element={<NotesPage />} />
+                <Route path="intake-submissions" element={<IntakeSubmissionsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/landing" />} />
         </Routes>

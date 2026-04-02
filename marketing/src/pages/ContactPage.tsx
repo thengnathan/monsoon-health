@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 
 type DropdownKey = 'products' | 'company' | null;
 import '../landing.css';
@@ -6,15 +6,8 @@ import '../landing.css';
 export default function ContactPage() {
     const [openDropdown, setOpenDropdown] = useState<DropdownKey>(null);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const [scrolled, setScrolled] = useState(false);
     const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [form, setForm] = useState({ name: '', email: '', org: '', message: '' });
-
-    useEffect(() => {
-        const onScroll = () => setScrolled(window.scrollY > 20);
-        window.addEventListener('scroll', onScroll, { passive: true });
-        return () => window.removeEventListener('scroll', onScroll);
-    }, []);
     const [submitted, setSubmitted] = useState(false);
 
     const openMenu = (key: DropdownKey) => {
@@ -48,7 +41,7 @@ export default function ContactPage() {
     return (
         <div className="landing-page">
             {/* ── Navbar ── */}
-            <nav className={`landing-nav${scrolled ? ' landing-nav--scrolled' : ''}`}>
+            <nav className="landing-nav">
                 <a href="/landing" className="landing-nav-brand" style={{ textDecoration: 'none' }}>
                     <img src="/images/monsoon-braid-wordmark-white.svg" className="landing-nav-wordmark" alt="Monsoon Health" />
                 </a>

@@ -61,7 +61,7 @@ export default function RainfallPage() {
     return (
         <div className="landing-page">
             {/* ── Navbar ── */}
-            <nav className={`landing-nav${scrolled ? ' landing-nav--scrolled' : ''}`}>
+            <nav className="landing-nav">
                 <a href="/landing" className="landing-nav-brand" style={{ textDecoration: 'none' }}>
                     <img src="/images/monsoon-braid-wordmark-white.svg" className="landing-nav-wordmark" alt="Monsoon Health" />
                 </a>

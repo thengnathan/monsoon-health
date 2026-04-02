@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 import { formatDate } from '../utils';
 import type { Patient, ReferralSource, UploadResult, BatchImportResult } from '../types';
 
@@ -29,6 +30,15 @@ export default function PatientsPage() {
     const batchFileInputRef = useRef<HTMLInputElement>(null);
     const navigate = useNavigate();
     const { addToast } = useToast();
+    const { user } = useAuth();
+
+    const intakeUrl = `${window.location.origin}/intake?site=${encodeURIComponent(user?.site_id || '')}`;
+
+    const copyIntakeLink = () => {
+        navigator.clipboard.writeText(intakeUrl)
+            .then(() => addToast('Intake link copied to clipboard', 'success'))
+            .catch(() => addToast('Could not copy link', 'error'));
+    };
 
     const emptyForm: PatientForm = { first_name: '', last_name: '', dob: '', internal_identifier: '', referral_source_id: '', referral_date: '', notes: '' };
     const [form, setForm] = useState<PatientForm>(emptyForm);
@@ -105,6 +115,10 @@ export default function PatientsPage() {
                     <p>Search and manage your patient registry</p>
                 </div>
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                    <button className="btn btn-secondary" onClick={copyIntakeLink}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: -2 }}><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" /></svg>
+                        Intake Link
+                    </button>
                     <button className="btn btn-secondary" onClick={() => setShowUploadTypeModal(true)} disabled={uploading}>
                         {uploading ? (
                             <><span className="spinner" style={{ width: 14, height: 14 }} /> Processing…</>

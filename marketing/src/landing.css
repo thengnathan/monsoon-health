@@ -11,7 +11,7 @@
     --lp-accent-hover: #a4d0eb;
     --lp-bg-dark: #0a141e;
     --lp-bg-section: #0d1a26;
-    --lp-text: #e4edf5;
+    --lp-text: #F2F0EF;
     --lp-text-muted: #8fa8be;
     --lp-card-bg: rgba(18, 32, 46, 0.7);
     --lp-border: rgba(136, 189, 223, 0.1);
@@ -39,14 +39,6 @@
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     border-bottom: none;
-}
-
-.landing-nav--scrolled {
-    background: rgba(10, 20, 30, 0.85);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(136, 189, 223, 0.1);
-    transition: background 0.3s ease, border-color 0.3s ease;
 }
 
 .landing-nav-brand {
@@ -301,7 +293,7 @@
 
 .landing-hero-sub {
     font-size: 1.5rem;
-    color: #e4edf5;
+    color: #F2F0EF;
     margin: 1.5rem auto 2.5rem;
     line-height: 1.7;
     font-weight: 500;
@@ -416,7 +408,7 @@
     font-size: clamp(3rem, 8vw, 6.5rem);
     font-weight: 700;
     letter-spacing: 0.04em;
-    color: #dce8f0;
+    color: #F2F0EF;
     text-transform: uppercase;
     line-height: 1.1;
 }
@@ -435,7 +427,7 @@
     left: 0;
     right: 0;
     overflow: hidden;
-    color: #dce8f0;
+    color: #F2F0EF;
     font-size: inherit;
     font-weight: inherit;
     letter-spacing: inherit;
@@ -1059,7 +1051,7 @@
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
     font-size: clamp(2rem, 3.5vw, 3rem);
     font-weight: 700;
-    color: #dce8f0;
+    color: #F2F0EF;
     line-height: 1.25;
     letter-spacing: -0.01em;
 }
@@ -1073,7 +1065,7 @@
 .editorial-body p {
     font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
     font-size: 1.15rem;
-    color: #e4edf5;
+    color: #F2F0EF;
     line-height: 1.75;
     max-width: 600px;
 }
@@ -1086,7 +1078,7 @@
 .editorial-mission p {
     font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
     font-size: 1.1rem;
-    color: #c8daea;
+    color: #F2F0EF;
     line-height: 1.8;
     max-width: 600px;
     font-style: italic;
@@ -1095,7 +1087,7 @@
 .editorial-tagline {
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
     font-size: clamp(1.2rem, 2vw, 1.5rem);
-    color: #dce8f0;
+    color: #F2F0EF;
     line-height: 1.5;
     font-weight: 600;
     letter-spacing: 0.01em;
@@ -1252,7 +1244,7 @@
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
     font-size: clamp(2.5rem, 5vw, 4rem);
     font-weight: 700;
-    color: #dce8f0;
+    color: #F2F0EF;
     letter-spacing: -0.02em;
     margin-bottom: 0.75rem;
 }
@@ -1539,7 +1531,7 @@
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
     font-size: clamp(3.5rem, 8vw, 6rem);
     font-weight: 700;
-    color: #dce8f0;
+    color: #F2F0EF;
     letter-spacing: 0.04em;
     line-height: 1;
     margin: 0;
@@ -1635,7 +1627,7 @@
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
     font-size: clamp(2rem, 4vw, 3rem);
     font-weight: 700;
-    color: #dce8f0;
+    color: #F2F0EF;
     letter-spacing: -0.01em;
     margin-bottom: 0.6rem;
     padding-left: 2%;
@@ -1697,7 +1689,7 @@
 .founder-name {
     font-size: 1.25rem;
     font-weight: 700;
-    color: #e4edf5;
+    color: #F2F0EF;
     letter-spacing: -0.01em;
 }
 
@@ -1770,7 +1762,7 @@
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
     font-size: clamp(2.8rem, 5vw, 4.5rem);
     font-weight: 700;
-    color: #e4edf5;
+    color: #F2F0EF;
     letter-spacing: -0.02em;
     line-height: 1.1;
     margin: 0;
@@ -1819,7 +1811,7 @@
 .contact-form-title {
     font-size: 1.4rem;
     font-weight: 600;
-    color: #e4edf5;
+    color: #F2F0EF;
     margin: 0 0 1.75rem;
     letter-spacing: -0.02em;
 }
@@ -1895,7 +1887,7 @@
 
 .contact-success h3 {
     font-size: 1.4rem;
-    color: #e4edf5;
+    color: #F2F0EF;
     margin: 0;
 }
 

@@ -10,7 +10,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jCan sx": "react-jsx",
+    "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false
