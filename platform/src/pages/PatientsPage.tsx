@@ -28,6 +28,9 @@ export default function PatientsPage() {
     const [showBatchResult, setShowBatchResult] = useState<BatchImportResult | null>(null);
     const [referralSources, setReferralSources] = useState<ReferralSource[]>([]);
     const [uploading, setUploading] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const batchFileInputRef = useRef<HTMLInputElement>(null);
     const navigate = useNavigate();
@@ -122,6 +125,37 @@ export default function PatientsPage() {
         if (batchFileInputRef.current) batchFileInputRef.current.value = '';
     };
 
+    const toggleSelect = (id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === patients.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(patients.map(p => p.id)));
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        setDeleting(true);
+        try {
+            const result = await api.bulkDeletePatients(Array.from(selectedIds)) as { deleted: number };
+            addToast(`${result.deleted} patient(s) deleted`, 'success');
+            setSelectedIds(new Set());
+            setShowDeleteConfirm(false);
+            loadPatients(search);
+        } catch (err) {
+            addToast((err as Error).message, 'error');
+        } finally {
+            setDeleting(false);
+        }
+    };
+
     return (
         <div>
             <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -160,6 +194,20 @@ export default function PatientsPage() {
                 />
             </div>
 
+            {selectedIds.size > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3) var(--space-4)', background: 'var(--accent-muted)', borderRadius: 'var(--radius)', marginBottom: 'var(--space-4)', border: '1px solid var(--accent)' }}>
+                    <span style={{ fontSize: 'var(--font-sm)', fontWeight: 600, color: 'var(--accent)', flex: 1 }}>
+                        {selectedIds.size} patient{selectedIds.size !== 1 ? 's' : ''} selected
+                    </span>
+                    <button className="btn btn-sm btn-ghost" onClick={() => setSelectedIds(new Set())} style={{ color: 'var(--text-tertiary)' }}>
+                        Clear
+                    </button>
+                    <button className="btn btn-sm" onClick={() => setShowDeleteConfirm(true)} style={{ background: 'var(--error)', color: 'white', border: 'none' }}>
+                        Delete Selected
+                    </button>
+                </div>
+            )}
+
             {loading ? (
                 <div className="loading-spinner"><div className="spinner" /></div>
             ) : patients.length === 0 ? (
@@ -183,6 +231,15 @@ export default function PatientsPage() {
                     <table className="data-table">
                         <thead>
                             <tr>
+                                <th style={{ width: 40, paddingRight: 0 }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={patients.length > 0 && selectedIds.size === patients.length}
+                                        ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < patients.length; }}
+                                        onChange={toggleSelectAll}
+                                        style={{ cursor: 'pointer' }}
+                                    />
+                                </th>
                                 <th>Patient</th>
                                 <th>DOB</th>
                                 <th>ID</th>
@@ -198,8 +255,11 @@ export default function PatientsPage() {
                                     <tr
                                         key={p.id}
                                         onClick={() => handleRowExpand(p.id)}
-                                        style={{ cursor: 'pointer', background: isExpanded ? 'var(--bg-secondary)' : undefined }}
+                                        style={{ cursor: 'pointer', background: selectedIds.has(p.id) ? 'var(--accent-muted)' : isExpanded ? 'var(--bg-secondary)' : undefined }}
                                     >
+                                        <td style={{ width: 40, paddingRight: 0 }} onClick={e => { e.stopPropagation(); toggleSelect(p.id); }}>
+                                            <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)} style={{ cursor: 'pointer' }} />
+                                        </td>
                                         <td className="patient-name" onClick={e => { e.stopPropagation(); navigate(`/patients/${p.id}`); }} style={{ color: 'var(--accent)', cursor: 'pointer' }}>
                                             {p.last_name}, {p.first_name}
                                         </td>
@@ -213,7 +273,7 @@ export default function PatientsPage() {
                                     </tr>,
                                     isExpanded && (
                                         <tr key={`${p.id}-expand`} style={{ background: 'var(--bg-secondary)' }}>
-                                            <td colSpan={5} style={{ padding: 'var(--space-3) var(--space-4)', borderTop: '1px solid var(--border)' }}>
+                                            <td colSpan={6} style={{ padding: 'var(--space-3) var(--space-4)', borderTop: '1px solid var(--border)' }}>
                                                 {!(p.id in summaries) ? (
                                                     <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>Loading…</div>
                                                 ) : !cd ? (
@@ -449,6 +509,34 @@ export default function PatientsPage() {
                             <button className="btn btn-secondary" onClick={() => setShowUploadResult(null)}>Close</button>
                             <button className="btn btn-primary" onClick={() => { setShowUploadResult(null); navigate(`/patients/${showUploadResult.patient.id}`); }}>
                                 View Patient →
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Bulk Delete Confirmation Modal */}
+            {showDeleteConfirm && (
+                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && !deleting && setShowDeleteConfirm(false)}>
+                    <div className="modal" style={{ maxWidth: 420 }}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Delete {selectedIds.size} Patient{selectedIds.size !== 1 ? 's' : ''}?</h3>
+                            <button className="modal-close" onClick={() => setShowDeleteConfirm(false)} disabled={deleting}>✕</button>
+                        </div>
+                        <div style={{ padding: 'var(--space-2) 0 var(--space-4)' }}>
+                            <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                This will permanently delete <strong>{selectedIds.size} patient record{selectedIds.size !== 1 ? 's' : ''}</strong> and all associated screening cases, clinical data, signals, and documents. This cannot be undone.
+                            </p>
+                        </div>
+                        <div className="modal-actions">
+                            <button className="btn btn-secondary" onClick={() => setShowDeleteConfirm(false)} disabled={deleting}>Cancel</button>
+                            <button
+                                className="btn"
+                                onClick={handleBulkDelete}
+                                disabled={deleting}
+                                style={{ background: 'var(--error)', color: 'white', border: 'none' }}
+                            >
+                                {deleting ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Deleting…</> : `Delete ${selectedIds.size} Patient${selectedIds.size !== 1 ? 's' : ''}`}
                             </button>
                         </div>
                     </div>

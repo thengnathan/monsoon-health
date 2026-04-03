@@ -193,6 +193,8 @@ export const api = {
     getPatientClinicalData: (patientId: string) => request<PatientClinicalData>(`/patients/${patientId}/clinical-data`),
     getPatientDocuments: (patientId: string) => request(`/patients/${patientId}/documents`),
     getDocumentUrl: (patientId: string, docId: string) => `${API_BASE}/patients/${patientId}/documents/${docId}/download`,
+    deletePatient: (patientId: string) => request(`/patients/${patientId}`, { method: 'DELETE' }),
+    bulkDeletePatients: (ids: string[]) => request('/patients/bulk-delete', { method: 'POST', body: { ids } }),
     deletePatientDocument: (patientId: string, docId: string) => request(`/patients/${patientId}/documents/${docId}`, { method: 'DELETE' }),
 
     // Notes

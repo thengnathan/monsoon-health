@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import pdfParse from 'pdf-parse';
 import * as XLSX from 'xlsx';
-import { authMiddleware, auditLog } from '../middleware/auth';
+import { authMiddleware, requireRole, auditLog } from '../middleware/auth';
 import { extractPatientDocument } from '../services/aiIngestion';
 import { mergePatientDocument } from '../services/patientClinicalData';
 
@@ -525,6 +525,43 @@ router.patch('/:id', async (req: Request, res: Response) => {
 
     const patient = (await db.query('SELECT * FROM patients WHERE id = $1', [req.params.id])).rows[0];
     res.json(patient);
+});
+
+// DELETE single patient
+router.delete('/:id', requireRole('MANAGER', 'CRC'), async (req: Request, res: Response) => {
+    try {
+        const db = req.app.locals.db;
+        const result = await db.query(
+            'DELETE FROM patients WHERE id = $1 AND site_id = $2',
+            [req.params.id, req.user.site_id]
+        );
+        if (result.rowCount === 0) { res.status(404).json({ error: 'Patient not found' }); return; }
+        await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'patient', entityId: req.params.id, action: 'DELETE', diff: {} });
+        res.json({ message: 'Patient deleted' });
+    } catch (err) {
+        console.error('[Patients] DELETE error:', err);
+        res.status(500).json({ error: 'Failed to delete patient' });
+    }
+});
+
+// POST /bulk-delete — must be defined before /:id routes to avoid param collision
+router.post('/bulk-delete', requireRole('MANAGER', 'CRC'), async (req: Request, res: Response) => {
+    try {
+        const db = req.app.locals.db;
+        const { ids } = req.body as { ids?: string[] };
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            res.status(400).json({ error: 'ids array is required' }); return;
+        }
+        const result = await db.query(
+            'DELETE FROM patients WHERE id = ANY($1) AND site_id = $2',
+            [ids, req.user.site_id]
+        );
+        await auditLog(db, { siteId: req.user.site_id, userId: req.user.id, entityType: 'patient', entityId: 'bulk', action: 'DELETE', diff: { ids, count: result.rowCount } });
+        res.json({ deleted: result.rowCount });
+    } catch (err) {
+        console.error('[Patients] Bulk delete error:', err);
+        res.status(500).json({ error: 'Failed to delete patients' });
+    }
 });
 
 export default router;
