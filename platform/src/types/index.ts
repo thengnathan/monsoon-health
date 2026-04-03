@@ -47,9 +47,17 @@ export interface ScreeningCaseRef {
     revisit_date: string | null;
 }
 
+export interface PatientDocumentRef {
+    id: string;
+    filename: string;
+    document_type: string;
+    created_at: string;
+}
+
 export interface PatientDetail extends Patient {
     screening_cases: ScreeningCaseRef[];
     signals: PatientSignalRow[];
+    documents?: PatientDocumentRef[];
 }
 
 export interface Trial {
@@ -83,12 +91,17 @@ export interface VisitTemplate {
 
 export interface SignalRule {
     id: string;
+    signal_type_id: string | null;
     signal_label: string;
     operator: string;
     threshold_number: number | null;
     threshold_text: string | null;
     threshold_list: string | null;
     unit: string | null;
+    criteria_text: string | null;
+    min_value: number | null;
+    max_value: number | null;
+    source: string;
 }
 
 export interface TrialProtocolRef {
@@ -97,6 +110,81 @@ export interface TrialProtocolRef {
     file_size: number;
     version: string | null;
     created_at: string;
+    structured_data?: {
+        visit_schedule?: string;
+        key_screening_criteria?: string[];
+        inclusion_criteria?: string[];
+        exclusion_criteria?: string[];
+        title?: string;
+        sponsor?: string;
+        phase?: string;
+        indication?: string;
+        primary_endpoint?: string;
+        secondary_endpoints?: string[];
+        study_duration?: string;
+    } | null;
+}
+
+// ── Clinical data types ────────────────────────────────────
+export interface LabValue {
+    name: string;
+    value: number | string;
+    unit: string;
+    date?: string;
+    flag?: 'high' | 'low' | 'critical' | null;
+    document_id?: string;
+}
+
+export interface VitalValue {
+    name: string;
+    value: number | string;
+    unit: string;
+    date?: string;
+    document_id?: string;
+}
+
+export interface ImagingResult {
+    type: string;
+    value?: number;
+    unit?: string;
+    date?: string;
+    findings?: string;
+    document_id?: string;
+}
+
+export interface ClinicalDiagnosis {
+    name: string;
+    status?: 'active' | 'resolved' | 'chronic';
+    onset_date?: string;
+}
+
+export interface MedicationEntry {
+    name: string;
+    dose?: string;
+    frequency?: string;
+    start_date?: string;
+}
+
+export interface PatientClinicalData {
+    id: string;
+    patient_id: string;
+    site_id: string;
+    diagnoses: ClinicalDiagnosis[];
+    medical_history: { condition: string; date?: string; notes?: string }[];
+    surgical_history: { procedure: string; date?: string; notes?: string }[];
+    medications: MedicationEntry[];
+    allergies: string[];
+    family_history: string[];
+    labs_latest: Record<string, LabValue>;
+    vitals_latest: Record<string, VitalValue>;
+    imaging_latest: Record<string, ImagingResult>;
+    labs_timeline: LabValue[];
+    vitals_timeline: VitalValue[];
+    imaging_timeline: ImagingResult[];
+    smoking_status?: string | null;
+    alcohol_use?: string | null;
+    last_document_id?: string | null;
+    updated_at: string;
 }
 
 export interface TrialCaseRef {

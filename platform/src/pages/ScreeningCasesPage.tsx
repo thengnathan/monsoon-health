@@ -38,7 +38,7 @@ export default function ScreeningCasesPage() {
                         </button>
                     ))}
                 </div>
-                <select className="form-select" style={{ width: 'auto', minWidth: 180, fontSize: 'var(--font-xs)' }} value={trialFilter} onChange={e => setTrialFilter(e.target.value)}>
+                <select className="form-select" style={{ width: 'auto', minWidth: 200, fontSize: 'var(--font-sm)' }} value={trialFilter} onChange={e => setTrialFilter(e.target.value)}>
                     <option value="">All Trials</option>
                     {trials.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>

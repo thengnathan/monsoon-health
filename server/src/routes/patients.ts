@@ -4,8 +4,8 @@ import multer from 'multer';
 import pdfParse from 'pdf-parse';
 import * as XLSX from 'xlsx';
 import { authMiddleware, auditLog } from '../middleware/auth';
-import { extractPatientDocumentData, cleanPdfText } from '../services/aiIngestion';
-import { embedAndStoreDocument } from '../services/embeddings';
+import { extractPatientDocument } from '../services/aiIngestion';
+import { mergePatientDocument } from '../services/patientClinicalData';
 
 const router = Router();
 router.use(authMiddleware);
@@ -271,27 +271,33 @@ router.post('/upload-document', upload.single('file'), async (req: Request, res:
         const documentType = (req.body as { document_type?: string }).document_type || 'OTHER';
         let extracted: ExtractedInfo = {};
 
-        let rawExtractedData: string | null = null;
+        let structuredData: Record<string, unknown> | null = null;
 
         if (req.file.mimetype === 'application/pdf') {
             try {
                 const pdfData = await pdfParse(req.file.buffer);
                 // Regex fallback for basic fields
                 extracted = extractPatientInfo(pdfData.text);
-                // LLM full extraction (comprehensive)
+                // AI full extraction
                 console.log('[Document] Running AI extraction...');
-                const aiExtracted = await extractPatientDocumentData(pdfData.text);
-                rawExtractedData = JSON.stringify(aiExtracted);
-                // Merge AI results into extracted (AI takes precedence for richer data)
+                const aiExtracted = await extractPatientDocument(pdfData.text);
+                structuredData = aiExtracted as Record<string, unknown>;
+                // Merge AI demographics into extracted (AI takes precedence)
                 if (aiExtracted.first_name) extracted.first_name = aiExtracted.first_name;
                 if (aiExtracted.last_name) extracted.last_name = aiExtracted.last_name;
                 if (aiExtracted.dob) extracted.dob = aiExtracted.dob;
-                if (aiExtracted.internal_identifier) extracted.internal_identifier = aiExtracted.internal_identifier;
-                if (aiExtracted.fibroscan_kpa) extracted.fibroscan_kpa = aiExtracted.fibroscan_kpa;
-                if (aiExtracted.alt) extracted.alt = aiExtracted.alt;
-                if (aiExtracted.ast) extracted.ast = aiExtracted.ast;
-                if (aiExtracted.platelets) extracted.platelets = aiExtracted.platelets;
-                if (aiExtracted.bmi) extracted.bmi = aiExtracted.bmi;
+                if (aiExtracted.mrn) extracted.internal_identifier = aiExtracted.mrn;
+                // Pull key values for legacy signal creation
+                const fibro = aiExtracted.imaging?.find(i => /fibroscan/i.test(i.type));
+                if (fibro?.value) extracted.fibroscan_kpa = fibro.value;
+                const alt = aiExtracted.labs?.find(l => /^alt$/i.test(l.name));
+                if (alt?.value !== undefined) extracted.alt = Number(alt.value);
+                const ast = aiExtracted.labs?.find(l => /^ast$/i.test(l.name));
+                if (ast?.value !== undefined) extracted.ast = Number(ast.value);
+                const plt = aiExtracted.labs?.find(l => /platelet|plt/i.test(l.name));
+                if (plt?.value !== undefined) extracted.platelets = Number(plt.value);
+                const bmi = aiExtracted.vitals?.find(v => /bmi/i.test(v.name));
+                if (bmi?.value !== undefined) extracted.bmi = Number(bmi.value);
                 console.log('[Document] AI extraction complete');
             } catch (e) {
                 const err = e as Error;
@@ -339,10 +345,17 @@ router.post('/upload-document', upload.single('file'), async (req: Request, res:
         if (uploadError) throw uploadError;
 
         await db.query(
-            `INSERT INTO patient_documents (id, site_id, patient_id, filename, mime_type, file_size, storage_path, document_type, uploaded_by_user_id, raw_extracted_data)
+            `INSERT INTO patient_documents (id, site_id, patient_id, filename, mime_type, file_size, storage_path, document_type, uploaded_by_user_id, structured_data)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-            [docId, req.user.site_id, finalPatientId, req.file.originalname, req.file.mimetype, req.file.size, storagePath, documentType, req.user.id, rawExtractedData]
+            [docId, req.user.site_id, finalPatientId, req.file.originalname, req.file.mimetype, req.file.size, storagePath, documentType, req.user.id,
+             structuredData ? JSON.stringify(structuredData) : null]
         );
+
+        // Merge structured data into unified patient clinical profile
+        if (structuredData) {
+            mergePatientDocument(db, req.user.site_id, finalPatientId, docId, structuredData as Parameters<typeof mergePatientDocument>[4])
+                .catch(mergeErr => console.error('[Document] Clinical data merge failed:', mergeErr));
+        }
 
         const signalMap: Record<string, string> = { fibroscan_kpa: 'sig-001', alt: 'sig-004', ast: 'sig-005', platelets: 'sig-003', bmi: 'sig-009' };
         const signalsCreated: string[] = [];
@@ -364,22 +377,6 @@ router.post('/upload-document', upload.single('file'), async (req: Request, res:
         const patient = (await db.query('SELECT * FROM patients WHERE id = $1', [finalPatientId])).rows[0];
         res.status(201).json({ document_id: docId, patient, patient_created: patientCreated, extracted, signals_created: signalsCreated });
 
-        // Background: embed the document for RAG retrieval (non-blocking)
-        if (req.file.mimetype === 'application/pdf') {
-            (async () => {
-                try {
-                    const pdfData = await pdfParse(req.file!.buffer);
-                    const cleanedText = cleanPdfText(pdfData.text);
-                    await embedAndStoreDocument(db, docId, 'patient', req.user.site_id, cleanedText, {
-                        patient_id: finalPatientId,
-                        document_type: documentType,
-                        filename: req.file!.originalname,
-                    });
-                } catch (embErr) {
-                    console.error('[Document] Embedding failed (non-fatal):', embErr);
-                }
-            })();
-        }
     } catch (err) {
         console.error('[Document] Upload error:', err);
         res.status(500).json({ error: 'Upload failed' });
@@ -423,6 +420,37 @@ router.delete('/:id/documents/:docId', async (req: Request, res: Response) => {
     await supabase.storage.from('patient-documents').remove([doc.storage_path]);
     await db.query('DELETE FROM patient_documents WHERE id = $1', [req.params.docId]);
     res.json({ message: 'Document deleted' });
+});
+
+router.get('/:id/clinical-data', async (req: Request, res: Response) => {
+    const db = req.app.locals.db;
+    const row = (await db.query(
+        'SELECT * FROM patient_clinical_data WHERE patient_id = $1 AND site_id = $2',
+        [req.params.id, req.user.site_id]
+    )).rows[0];
+    if (!row) { res.status(404).json({ error: 'No clinical data found' }); return; }
+
+    const parseJsonb = (v: unknown) => {
+        if (!v) return v;
+        if (typeof v === 'string') { try { return JSON.parse(v); } catch { return v; } }
+        return v;
+    };
+
+    res.json({
+        ...row,
+        diagnoses: parseJsonb(row.diagnoses),
+        medical_history: parseJsonb(row.medical_history),
+        surgical_history: parseJsonb(row.surgical_history),
+        medications: parseJsonb(row.medications),
+        allergies: parseJsonb(row.allergies),
+        family_history: parseJsonb(row.family_history),
+        labs_latest: parseJsonb(row.labs_latest),
+        vitals_latest: parseJsonb(row.vitals_latest),
+        imaging_latest: parseJsonb(row.imaging_latest),
+        labs_timeline: parseJsonb(row.labs_timeline),
+        vitals_timeline: parseJsonb(row.vitals_timeline),
+        imaging_timeline: parseJsonb(row.imaging_timeline),
+    });
 });
 
 router.get('/:id/protocol-signals', async (req: Request, res: Response) => {

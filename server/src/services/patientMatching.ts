@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import { ollamaExtract } from './ollama';
-import type { ExtractedProtocolData } from './aiIngestion';
+import { claudeExtract } from './claude';
+import type { StructuredProtocol } from '../types/clinicalSchemas';
 
 export interface CriterionResult {
     criterion: string;
@@ -19,11 +19,9 @@ export interface MatchResult {
 
 const MATCHING_SYSTEM = `You are a clinical trial eligibility screener. Given a patient's clinical data and a protocol's eligibility criteria, determine if the patient meets each criterion. Be precise. If data is missing, mark as UNKNOWN. Return ONLY valid JSON.`;
 
-function buildMatchingPrompt(patientData: Record<string, unknown>, criteria: ExtractedProtocolData): string {
-    const allCriteria = [
-        ...criteria.inclusion_criteria.map(c => ({ ...c, type: 'inclusion' as const })),
-        ...criteria.exclusion_criteria.map(c => ({ ...c, type: 'exclusion' as const })),
-    ];
+function buildMatchingPrompt(patientData: Record<string, unknown>, criteria: StructuredProtocol): string {
+    const inclusion = (criteria.inclusion_criteria || []).map((c, i) => `${i + 1}. [INCLUSION] ${c}`);
+    const exclusion = (criteria.exclusion_criteria || []).map((c, i) => `${inclusion.length + i + 1}. [EXCLUSION] ${c}`);
 
     return `Evaluate this patient's eligibility for the clinical trial.
 
@@ -33,7 +31,7 @@ PATIENT DATA:
 ${JSON.stringify(patientData, null, 2)}
 
 ELIGIBILITY CRITERIA:
-${allCriteria.map((c, i) => `${i + 1}. [${c.type.toUpperCase()}] ${c.text}`).join('\n')}
+${[...inclusion, ...exclusion].join('\n')}
 
 Return a JSON object:
 {
@@ -61,10 +59,10 @@ Rules:
 
 export async function matchPatientToProtocol(
     patientData: Record<string, unknown>,
-    criteria: ExtractedProtocolData
+    criteria: StructuredProtocol
 ): Promise<MatchResult> {
     try {
-        return await ollamaExtract<MatchResult>(
+        return await claudeExtract<MatchResult>(
             buildMatchingPrompt(patientData, criteria),
             MATCHING_SYSTEM
         );
@@ -99,9 +97,9 @@ export async function runProtocolMatching(
         return { matched: 0, assigned: 0 };
     }
 
-    let criteria: ExtractedProtocolData;
+    let criteria: StructuredProtocol;
     try {
-        criteria = JSON.parse(trial.extracted_criteria_json as string) as ExtractedProtocolData;
+        criteria = JSON.parse(trial.extracted_criteria_json as string) as StructuredProtocol;
     } catch {
         console.log('[Matching] Failed to parse criteria JSON');
         return { matched: 0, assigned: 0 };

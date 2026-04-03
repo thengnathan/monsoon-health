@@ -21,9 +21,17 @@ interface VisitForm {
 }
 
 interface SignalForm {
+    mode: 'catalog' | 'freeform';
+    // catalog mode
     signal_type_id: string;
+    // freeform mode
+    signal_label: string;
+    criteria_text: string;
+    // shared
     operator: string;
     threshold_number: string;
+    min_value: string;
+    max_value: string;
     unit: string;
 }
 
@@ -266,6 +274,8 @@ export default function TrialDetailPage() {
     const [editingCriteria, setEditingCriteria] = useState(false);
     const [criteriaForm, setCriteriaForm] = useState<CriteriaForm>({ inclusion_criteria: '', exclusion_criteria: '' });
     const [reextracting, setReextracting] = useState(false);
+    const [extracting, setExtracting] = useState(false);
+    const extractionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const [inclusionCollapsed, setInclusionCollapsed] = useState(true);
     const [exclusionCollapsed, setExclusionCollapsed] = useState(true);
     const [caseTab, setCaseTab] = useState<'potential' | 'screening' | 'enrolled'>('screening');
@@ -285,22 +295,51 @@ export default function TrialDetailPage() {
         }).catch(console.error).finally(() => setLoading(false));
     };
 
+    // Poll after extraction starts; stop when data arrives or after ~45s
+    const startExtractionPoll = () => {
+        // Auto-expand criteria panels so skeletons are visible
+        setInclusionCollapsed(false);
+        setExclusionCollapsed(false);
+        if (extractionPollRef.current) clearInterval(extractionPollRef.current);
+        setExtracting(true);
+        let attempts = 0;
+        extractionPollRef.current = setInterval(async () => {
+            attempts++;
+            try {
+                const data = await api.getTrial(id!);
+                setTrial(data);
+                setCriteriaForm({ inclusion_criteria: data.inclusion_criteria || '', exclusion_criteria: data.exclusion_criteria || '' });
+                const hasData =
+                    (data.visit_templates?.length > 0) ||
+                    (data.signal_rules?.length > 0) ||
+                    (data.protocol?.structured_data?.inclusion_criteria?.length ?? 0) > 0;
+                if (hasData || attempts >= 15) {
+                    clearInterval(extractionPollRef.current!);
+                    setExtracting(false);
+                    setReextracting(false);
+                }
+            } catch {
+                clearInterval(extractionPollRef.current!);
+                setExtracting(false);
+                setReextracting(false);
+            }
+        }, 3000);
+    };
+
     useEffect(() => {
         loadTrial();
         api.getSignalTypes().then(setSignalTypes).catch(() => {});
+        return () => { if (extractionPollRef.current) clearInterval(extractionPollRef.current); };
     }, [id]);
 
     const handleProtocolUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
         try {
-            const result = await api.uploadProtocol(id!, file);
-            let msg = 'Protocol uploaded';
-            if (result.auto_extracted?.inclusion_criteria || result.auto_extracted?.exclusion_criteria) {
-                msg += ' — eligibility criteria auto-extracted from PDF!';
-            }
-            addToast(msg, 'success');
+            await api.uploadProtocol(id!, file);
+            addToast('Protocol uploaded — extracting criteria and visits…', 'success');
             loadTrial();
+            startExtractionPoll();
         } catch (err) { addToast((err as Error).message, 'error'); }
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
@@ -318,12 +357,12 @@ export default function TrialDetailPage() {
         setReextracting(true);
         try {
             await api.reextractProtocol(id!);
-            addToast('Re-extraction started — criteria will update in the background', 'success');
-            // Poll for updated criteria after a short delay
-            setTimeout(() => { loadTrial(); setReextracting(false); }, 8000);
+            addToast('Re-extraction started — updating in the background…', 'success');
+            startExtractionPoll();
         } catch (err) {
             addToast((err as Error).message, 'error');
             setReextracting(false);
+            setExtracting(false);
         }
     };
 
@@ -362,15 +401,29 @@ export default function TrialDetailPage() {
         } catch (err) { addToast((err as Error).message, 'error'); }
     };
 
-    const emptySignalForm: SignalForm = { signal_type_id: '', operator: 'GTE', threshold_number: '', unit: '' };
+    const emptySignalForm: SignalForm = { mode: 'freeform', signal_type_id: '', signal_label: '', criteria_text: '', operator: 'GTE', threshold_number: '', min_value: '', max_value: '', unit: '' };
     const [signalForm, setSignalForm] = useState<SignalForm>(emptySignalForm);
     const [editingRule, setEditingRule] = useState<import('../types').SignalRule | null>(null);
 
     const handleAddSignal = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const payload: Record<string, unknown> = { ...signalForm };
-            if (signalForm.threshold_number) payload.threshold_number = parseFloat(signalForm.threshold_number);
+            const payload: Record<string, unknown> = { operator: signalForm.operator };
+            if (signalForm.mode === 'catalog') {
+                payload.signal_type_id = signalForm.signal_type_id;
+                if (signalForm.threshold_number) payload.threshold_number = parseFloat(signalForm.threshold_number);
+                if (signalForm.unit) payload.unit = signalForm.unit;
+            } else {
+                payload.signal_label = signalForm.signal_label;
+                payload.criteria_text = signalForm.criteria_text;
+                if (signalForm.operator === 'BETWEEN') {
+                    if (signalForm.min_value) payload.min_value = parseFloat(signalForm.min_value);
+                    if (signalForm.max_value) payload.max_value = parseFloat(signalForm.max_value);
+                } else {
+                    if (signalForm.threshold_number) payload.threshold_number = parseFloat(signalForm.threshold_number);
+                }
+                if (signalForm.unit) payload.unit = signalForm.unit;
+            }
             await api.createTrialRule(id!, payload);
             addToast('Signal rule added', 'success');
             setShowSignalModal(false);
@@ -384,7 +437,14 @@ export default function TrialDetailPage() {
         if (!editingRule) return;
         try {
             const payload: Record<string, unknown> = { operator: signalForm.operator };
-            if (signalForm.threshold_number) payload.threshold_number = parseFloat(signalForm.threshold_number);
+            if (signalForm.criteria_text) payload.criteria_text = signalForm.criteria_text;
+            if (signalForm.signal_label) payload.signal_label = signalForm.signal_label;
+            if (signalForm.operator === 'BETWEEN') {
+                if (signalForm.min_value) payload.min_value = parseFloat(signalForm.min_value);
+                if (signalForm.max_value) payload.max_value = parseFloat(signalForm.max_value);
+            } else {
+                if (signalForm.threshold_number) payload.threshold_number = parseFloat(signalForm.threshold_number);
+            }
             if (signalForm.unit) payload.unit = signalForm.unit;
             await api.updateTrialRule(editingRule.id, payload);
             addToast('Signal rule updated', 'success');
@@ -406,7 +466,7 @@ export default function TrialDetailPage() {
     if (!trial) return <div className="empty-state"><h3>Trial not found</h3></div>;
 
     const statusColors: Record<string, string> = { ACTIVE: 'var(--status-enrolled)', PAUSED: 'var(--status-in-review)', CLOSED: 'var(--text-tertiary)' };
-    const operatorLabels: Record<string, string> = { GTE: '≥', LTE: '≤', EQ: '=', IN: 'in' };
+    const operatorLabels: Record<string, string> = { GTE: '≥', LTE: '≤', EQ: '=', IN: 'in', BETWEEN: '↔', TEXT_MATCH: '≈' };
 
     const formatFileSize = (bytes: number) => {
         if (bytes < 1024) return `${bytes} B`;
@@ -429,60 +489,62 @@ export default function TrialDetailPage() {
 
             {trial.description && (
                 <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
-                    <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', lineHeight: 'var(--leading-relaxed)' }}>{trial.description}</p>
+                    <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-secondary)', lineHeight: 'var(--leading-relaxed)' }}>{trial.description}</p>
                 </div>
             )}
 
             <div className="detail-grid">
-                <div>
+                <div style={{ position: 'sticky', top: 'var(--space-8)', maxHeight: 'calc(100vh - 2 * var(--space-8))', overflowY: 'auto', alignSelf: 'start', paddingRight: 'var(--space-2)' }}>
                     {/* Protocol Upload */}
                     <div className="detail-section">
                         <div className="detail-section-title">Protocol Document</div>
                         {trial.protocol ? (
-                            <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-                                <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-sm)', background: 'var(--accent-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>📄</div>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontWeight: 500, fontSize: 'var(--font-sm)' }}>{trial.protocol.filename}</div>
-                                    <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)' }}>
-                                        {formatFileSize(trial.protocol.file_size)} · {formatDate(trial.protocol.created_at)}
-                                        {trial.protocol.version && ` · ${trial.protocol.version}`}
+                            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-4)' }}>
+                                    <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-sm)', background: 'var(--accent-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>📄</div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontWeight: 500, fontSize: 'var(--font-base)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={trial.protocol.filename}>
+                                            {trial.protocol.filename.length > 25 ? trial.protocol.filename.slice(0, 25) + '…' : trial.protocol.filename}
+                                        </div>
+                                        <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>
+                                            {formatFileSize(trial.protocol.file_size)} · {formatDate(trial.protocol.created_at)}
+                                            {trial.protocol.version && ` · ${trial.protocol.version}`}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                                        <a href={api.getProtocolUrl(id!)} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-secondary" style={{ padding: '4px 10px' }}>View</a>
+                                        <button className="btn btn-sm btn-ghost" onClick={handleDeleteProtocol} style={{ color: 'var(--error)', padding: '4px 10px' }}>Remove</button>
                                     </div>
                                 </div>
-                                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                                    <a href={api.getProtocolUrl(id!)} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-secondary">View PDF</a>
-                                    <button className="btn btn-sm btn-ghost" onClick={handleDeleteProtocol} style={{ color: 'var(--error)' }}>Remove</button>
+                                <div style={{ display: 'flex', gap: 'var(--space-2)', padding: '0 var(--space-4) var(--space-3)', borderTop: '1px solid var(--border-subtle)' }}>
+                                    <button className="btn btn-sm btn-ghost" onClick={() => fileInputRef.current?.click()} style={{ marginTop: 'var(--space-2)' }}>Replace Protocol</button>
+                                    <button
+                                        className="btn btn-sm btn-ghost"
+                                        onClick={handleReextract}
+                                        disabled={reextracting}
+                                        title="Re-run AI extraction on the uploaded protocol PDF"
+                                        style={{ color: 'var(--text-tertiary)', marginTop: 'var(--space-2)' }}
+                                    >
+                                        {reextracting ? 'Re-extracting…' : '↺ Re-extract'}
+                                    </button>
                                 </div>
                             </div>
                         ) : (
                             <div className="card" style={{ textAlign: 'center', padding: 'var(--space-6)' }}>
                                 <div style={{ fontSize: 32, marginBottom: 'var(--space-3)', opacity: 0.4 }}>📄</div>
-                                <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', marginBottom: 'var(--space-4)' }}>No protocol uploaded</p>
+                                <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-tertiary)', marginBottom: 'var(--space-4)' }}>No protocol uploaded</p>
                                 <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>Upload Protocol PDF</button>
                             </div>
                         )}
                         <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleProtocolUpload} style={{ display: 'none' }} />
-                        {trial.protocol && (
-                            <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
-                                <button className="btn btn-sm btn-ghost" onClick={() => fileInputRef.current?.click()}>Replace Protocol</button>
-                                <button
-                                    className="btn btn-sm btn-ghost"
-                                    onClick={handleReextract}
-                                    disabled={reextracting}
-                                    title="Re-run AI extraction on the uploaded protocol PDF"
-                                    style={{ color: 'var(--text-tertiary)' }}
-                                >
-                                    {reextracting ? 'Re-extracting…' : '↺ Re-extract'}
-                                </button>
-                            </div>
-                        )}
                     </div>
 
                     {/* I/E Criteria */}
-                    <div className="detail-section">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="detail-section" style={{ marginTop: 'var(--space-6)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                             <div className="detail-section-title" style={{ marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>Eligibility Criteria</div>
                             {!editingCriteria && (
-                                <button className="btn btn-sm btn-secondary" onClick={() => setEditingCriteria(true)}>Edit</button>
+                                <button className="btn btn-sm btn-ghost" onClick={() => setEditingCriteria(true)} style={{ fontSize: 'var(--font-xs)', padding: '2px 8px' }}>Edit</button>
                             )}
                         </div>
                         {editingCriteria ? (
@@ -510,53 +572,207 @@ export default function TrialDetailPage() {
                             <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                                 {!trial.inclusion_criteria && !trial.exclusion_criteria ? (
                                     <div className="card" style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
-                                        <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No criteria defined yet. Upload the protocol and enter criteria here.</p>
+                                        <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-tertiary)' }}>No criteria defined yet. Upload the protocol and enter criteria here.</p>
                                     </div>
                                 ) : (
                                     <>
                                         {/* Inclusion panel */}
-                                        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                                            <button
-                                                onClick={() => setInclusionCollapsed(c => !c)}
-                                                style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px var(--space-4)', background: 'var(--bg-secondary)', border: 'none', cursor: 'pointer', borderBottom: inclusionCollapsed ? 'none' : '1px solid var(--border)' }}
-                                            >
-                                                <span style={{ fontSize: 'var(--font-base)', fontWeight: 600, color: 'var(--text-primary)' }}>Inclusion Criteria</span>
-                                                <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{inclusionCollapsed ? '▼' : '▲'}</span>
-                                            </button>
-                                            {!inclusionCollapsed && (
-                                                <div
-                                                    className="criteria-html"
-                                                    dangerouslySetInnerHTML={{ __html: criteriaToHtml(trial.inclusion_criteria || '') }}
-                                                    style={{ padding: 'var(--space-4)', fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', lineHeight: 1.65 }}
-                                                />
-                                            )}
-                                        </div>
+                                        {(() => {
+                                            const items = trial.protocol?.structured_data?.inclusion_criteria;
+                                            const count = items?.length ?? 0;
+                                            return (
+                                                <div className="card" style={{ padding: 0, overflow: 'hidden', borderLeft: '2px solid var(--success)' }}>
+                                                    <button
+                                                        onClick={() => setInclusionCollapsed(c => !c)}
+                                                        className="criteria-toggle"
+                                                        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px var(--space-4)', background: 'var(--bg-secondary)', border: 'none', cursor: 'pointer', borderBottom: inclusionCollapsed ? 'none' : '1px solid var(--border)', transition: 'background var(--transition-fast)' }}
+                                                    >
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                                            <span style={{ fontSize: 'var(--font-base)', fontWeight: 600, color: 'var(--text-primary)' }}>Inclusion Criteria</span>
+                                                            {count > 0 && <span style={{ fontSize: 12, fontWeight: 600, padding: '1px 7px', borderRadius: 10, background: 'rgba(var(--success-rgb, 45,122,79),0.12)', color: 'var(--success)' }}>{count}</span>}
+                                                        </div>
+                                                        <span style={{ fontSize: 14, color: 'var(--text-tertiary)' }}>{inclusionCollapsed ? '▼' : '▲'}</span>
+                                                    </button>
+                                                    {!inclusionCollapsed && (
+                                                        extracting ? (
+                                                            <div style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                                                {[90, 75, 85, 60, 80, 70].map((w, i) => (
+                                                                    <div key={i} style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', padding: 'var(--space-2) var(--space-3)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)' }}>
+                                                                        <div className="skeleton" style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0 }} />
+                                                                        <div className="skeleton" style={{ height: 13, width: `${w}%` }} />
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : items && items.length > 0 ? (
+                                                            <div style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                                                {items.map((criterion, i) => (
+                                                                    <div key={i} style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-start', padding: 'var(--space-2) var(--space-3)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)' }}>
+                                                                        <span style={{ minWidth: 22, height: 22, borderRadius: '50%', background: 'rgba(var(--success-rgb, 45,122,79),0.15)', color: 'var(--success)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{i + 1}</span>
+                                                                        <span style={{ fontSize: 'var(--font-base)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{criterion}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="criteria-html" dangerouslySetInnerHTML={{ __html: criteriaToHtml(trial.inclusion_criteria || '') }}
+                                                                style={{ padding: 'var(--space-4)', fontSize: 'var(--font-base)', color: 'var(--text-secondary)', lineHeight: 1.65 }} />
+                                                        )
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                         {/* Exclusion panel */}
-                                        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                                            <button
-                                                onClick={() => setExclusionCollapsed(c => !c)}
-                                                style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px var(--space-4)', background: 'var(--bg-secondary)', border: 'none', cursor: 'pointer', borderBottom: exclusionCollapsed ? 'none' : '1px solid var(--border)' }}
-                                            >
-                                                <span style={{ fontSize: 'var(--font-base)', fontWeight: 600, color: 'var(--text-primary)' }}>Exclusion Criteria</span>
-                                                <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{exclusionCollapsed ? '▼' : '▲'}</span>
-                                            </button>
-                                            {!exclusionCollapsed && (
-                                                <div
-                                                    className="criteria-html"
-                                                    dangerouslySetInnerHTML={{ __html: criteriaToHtml(trial.exclusion_criteria || '') }}
-                                                    style={{ padding: 'var(--space-4)', fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', lineHeight: 1.65 }}
-                                                />
-                                            )}
-                                        </div>
+                                        {(() => {
+                                            const items = trial.protocol?.structured_data?.exclusion_criteria;
+                                            const count = items?.length ?? 0;
+                                            return (
+                                                <div className="card" style={{ padding: 0, overflow: 'hidden', borderLeft: '2px solid var(--error)' }}>
+                                                    <button
+                                                        onClick={() => setExclusionCollapsed(c => !c)}
+                                                        className="criteria-toggle"
+                                                        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px var(--space-4)', background: 'var(--bg-secondary)', border: 'none', cursor: 'pointer', borderBottom: exclusionCollapsed ? 'none' : '1px solid var(--border)', transition: 'background var(--transition-fast)' }}
+                                                    >
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                                            <span style={{ fontSize: 'var(--font-base)', fontWeight: 600, color: 'var(--text-primary)' }}>Exclusion Criteria</span>
+                                                            {count > 0 && <span style={{ fontSize: 12, fontWeight: 600, padding: '1px 7px', borderRadius: 10, background: 'rgba(var(--error-rgb, 192,57,43),0.12)', color: 'var(--error)' }}>{count}</span>}
+                                                        </div>
+                                                        <span style={{ fontSize: 14, color: 'var(--text-tertiary)' }}>{exclusionCollapsed ? '▼' : '▲'}</span>
+                                                    </button>
+                                                    {!exclusionCollapsed && (
+                                                        extracting ? (
+                                                            <div style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                                                {[85, 70, 90, 65, 80, 75, 55].map((w, i) => (
+                                                                    <div key={i} style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', padding: 'var(--space-2) var(--space-3)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)' }}>
+                                                                        <div className="skeleton" style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0 }} />
+                                                                        <div className="skeleton" style={{ height: 13, width: `${w}%` }} />
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : items && items.length > 0 ? (
+                                                            <div style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                                                {items.map((criterion, i) => (
+                                                                    <div key={i} style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-start', padding: 'var(--space-2) var(--space-3)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)' }}>
+                                                                        <span style={{ minWidth: 22, height: 22, borderRadius: '50%', background: 'rgba(var(--error-rgb, 192,57,43),0.12)', color: 'var(--error)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{i + 1}</span>
+                                                                        <span style={{ fontSize: 'var(--font-base)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{criterion}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="criteria-html" dangerouslySetInnerHTML={{ __html: criteriaToHtml(trial.exclusion_criteria || '') }}
+                                                                style={{ padding: 'var(--space-4)', fontSize: 'var(--font-base)', color: 'var(--text-secondary)', lineHeight: 1.65 }} />
+                                                        )
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </>
                                 )}
                             </div>
                         )}
                     </div>
 
+                    {/* Cases Tabs */}
+                    {(() => {
+                        const SCREENING_STATUSES = ['NEW', 'IN_REVIEW', 'PENDING_INFO', 'LIKELY_ELIGIBLE'];
+                        const all = trial.screening_cases || [];
+                        const potentialCases = all.filter(c => c.status === 'FUTURE_CANDIDATE');
+                        const screeningCases = all.filter(c => SCREENING_STATUSES.includes(c.status));
+                        const enrolledCases = all.filter(c => c.status === 'ENROLLED');
+
+                        const tabStyle = (active: boolean): React.CSSProperties => ({
+                            padding: '8px 14px',
+                            fontSize: 'var(--font-base)',
+                            fontWeight: active ? 600 : 400,
+                            color: active ? 'var(--accent)' : 'var(--text-secondary)',
+                            background: 'none',
+                            border: 'none',
+                            borderBottom: active ? '3px solid var(--accent)' : '3px solid transparent',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            marginBottom: '-1px',
+                            transition: 'color var(--transition-fast)',
+                        });
+
+                        const badgeStyle = (active: boolean): React.CSSProperties => ({
+                            marginLeft: 6,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            background: active ? 'var(--accent-muted)' : 'var(--bg-secondary)',
+                            color: active ? 'var(--accent)' : 'var(--text-tertiary)',
+                            borderRadius: 10,
+                            padding: '2px 8px',
+                            display: 'inline-block',
+                            minWidth: 20,
+                            textAlign: 'center',
+                        });
+
+                        const activeCases =
+                            caseTab === 'potential' ? potentialCases :
+                            caseTab === 'screening' ? screeningCases :
+                            enrolledCases;
+
+                        return (
+                            <div className="detail-section">
+                                <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: 'var(--space-4)', gap: 0 }}>
+                                    <button style={tabStyle(caseTab === 'potential')} onClick={() => setCaseTab('potential')}>
+                                        Potential
+                                        <span style={badgeStyle(caseTab === 'potential')}>{potentialCases.length}</span>
+                                    </button>
+                                    <button style={tabStyle(caseTab === 'screening')} onClick={() => setCaseTab('screening')}>
+                                        Screening
+                                        <span style={badgeStyle(caseTab === 'screening')}>{screeningCases.length}</span>
+                                    </button>
+                                    <button style={tabStyle(caseTab === 'enrolled')} onClick={() => setCaseTab('enrolled')}>
+                                        Enrolled
+                                        <span style={badgeStyle(caseTab === 'enrolled')}>{enrolledCases.length}</span>
+                                    </button>
+                                </div>
+                                {activeCases.length === 0 ? (
+                                    <div className="card" style={{ textAlign: 'center', padding: 'var(--space-8) var(--space-6)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-3)' }}>
+                                        <div style={{ fontSize: 32, opacity: 0.35, marginBottom: 'var(--space-1)' }}>
+                                            {caseTab === 'potential' ? '🔍' : caseTab === 'screening' ? '📋' : '✓'}
+                                        </div>
+                                        <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-tertiary)', margin: 0, maxWidth: 240 }}>
+                                            {caseTab === 'potential' && 'No future candidates for this trial yet.'}
+                                            {caseTab === 'screening' && 'No active screening cases for this trial.'}
+                                            {caseTab === 'enrolled' && 'No enrolled patients for this trial yet.'}
+                                        </p>
+                                        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', marginTop: 'var(--space-2)' }}>
+                                            <button className="btn btn-sm btn-primary" onClick={() => navigate('/screening')}>Add Screening Case</button>
+                                            <button className="btn btn-sm btn-ghost" onClick={() => navigate('/patients')} style={{ fontSize: 'var(--font-xs)', color: 'var(--accent)' }}>Import Patient List</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                                        <table className="data-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Patient</th>
+                                                    <th>Status</th>
+                                                    <th>CRC</th>
+                                                    <th>Updated</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {activeCases.map(sc => (
+                                                    <tr key={sc.id} onClick={() => navigate(`/screening/${sc.id}`)} style={{ cursor: 'pointer' }}>
+                                                        <td className="patient-name">{sc.last_name}, {sc.first_name}</td>
+                                                        <td><StatusBadge status={sc.status} /></td>
+                                                        <td className="meta">{sc.assigned_user_name || '—'}</td>
+                                                        <td className="meta">{formatDate(sc.updated_at)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
+
                 </div>
 
                 <div>
+
                     {/* Visit Schedule */}
                     <div className="detail-section">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -564,9 +780,21 @@ export default function TrialDetailPage() {
                             <button className="btn btn-sm btn-secondary" onClick={() => setShowVisitModal(true)}>+ Add Visit</button>
                         </div>
                         <div style={{ marginTop: 'var(--space-4)' }}>
-                            {(!trial.visit_templates || trial.visit_templates.length === 0) ? (
+                            {extracting ? (
+                                <div className="card" style={{ padding: 'var(--space-4)' }}>
+                                    {[80, 65, 75, 55, 70].map((w, i) => (
+                                        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', marginBottom: i < 4 ? 'var(--space-4)' : 0 }}>
+                                            <div className="skeleton" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0 }} />
+                                            <div style={{ flex: 1, paddingTop: 4 }}>
+                                                <div className="skeleton" style={{ height: 14, width: `${w}%`, marginBottom: 8 }} />
+                                                <div className="skeleton" style={{ height: 11, width: '40%' }} />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (!trial.visit_templates || trial.visit_templates.length === 0) ? (
                                 <div className="card" style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
-                                    <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No visits defined. Add visits to set up the study schedule.</p>
+                                    <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-tertiary)' }}>No visits defined. Add visits to set up the study schedule.</p>
                                 </div>
                             ) : (
                                 <div className="card" style={{ padding: 'var(--space-4)', maxHeight: 480, overflowY: 'auto' }}>
@@ -598,8 +826,8 @@ export default function TrialDetailPage() {
                                                         onClick={() => { setSelectedVisit(vt); setVisitNotes(vt.notes || ''); }}
                                                         style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}
                                                     >
-                                                        <div style={{ fontWeight: 600, fontSize: 'var(--font-sm)', color: 'var(--text-primary)', lineHeight: 1.3 }}>{vt.visit_name}</div>
-                                                        <div style={{ fontSize: 'var(--font-xs)', color: 'var(--accent)', fontWeight: 600, marginTop: 2 }}>
+                                                        <div style={{ fontWeight: 600, fontSize: 'var(--font-base)', color: 'var(--text-primary)', lineHeight: 1.3 }}>{vt.visit_name}</div>
+                                                        <div style={{ fontSize: 'var(--font-sm)', color: 'var(--accent)', fontWeight: 600, marginTop: 2 }}>
                                                             Day {vt.day_offset}
                                                             <span style={{ color: 'var(--text-tertiary)', fontWeight: 400, marginLeft: 6 }}>±{vt.window_before}/{vt.window_after}d</span>
                                                         </div>
@@ -608,12 +836,12 @@ export default function TrialDetailPage() {
                                                         <button
                                                             className="btn btn-sm btn-ghost"
                                                             onClick={() => { setSelectedVisit(vt); setVisitNotes(vt.notes || ''); }}
-                                                            style={{ color: 'var(--text-tertiary)', fontSize: 10, padding: '2px 6px' }}
+                                                            style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-sm)', padding: '2px 8px' }}
                                                         >Edit</button>
                                                         <button
                                                             className="btn btn-sm btn-ghost"
                                                             onClick={() => handleDeleteVisit(vt.id)}
-                                                            style={{ color: 'var(--text-tertiary)', fontSize: 10, padding: '2px 6px' }}
+                                                            style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-sm)', padding: '2px 8px' }}
                                                         >✕</button>
                                                     </div>
                                                 </div>
@@ -632,26 +860,51 @@ export default function TrialDetailPage() {
                             <button className="btn btn-sm btn-secondary" onClick={() => setShowSignalModal(true)}>+ Add Rule</button>
                         </div>
                         <div style={{ marginTop: 'var(--space-4)' }}>
-                            {(!trial.signal_rules || trial.signal_rules.length === 0) ? (
+                            {extracting ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                                    {[70, 85, 60, 78, 65, 90].map((w, i) => (
+                                        <div key={i} className="card" style={{ padding: 'var(--space-3) var(--space-4)' }}>
+                                            <div className="skeleton" style={{ height: 14, width: '35%', marginBottom: 8 }} />
+                                            <div className="skeleton" style={{ height: 13, width: `${w}%` }} />
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (!trial.signal_rules || trial.signal_rules.length === 0) ? (
                                 <div className="card" style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
-                                    <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No signal rules configured. Add rules to define eligibility thresholds.</p>
+                                    <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-tertiary)' }}>No signal rules configured. Add rules to define eligibility thresholds.</p>
                                 </div>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                                     {trial.signal_rules.map(rule => (
                                         <div key={rule.id} className="card" style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                                             <div style={{ flex: 1 }}>
-                                                <div style={{ fontWeight: 500, fontSize: 'var(--font-sm)' }}>{rule.signal_label}</div>
-                                                <div style={{ fontSize: 'var(--font-lg)', fontWeight: 700, color: 'var(--accent)', marginTop: 2 }}>
-                                                    {operatorLabels[rule.operator] || rule.operator}{' '}
-                                                    {rule.threshold_number != null ? rule.threshold_number : rule.threshold_text || ''}
-                                                    {rule.threshold_list && JSON.parse(rule.threshold_list).join(', ')}
-                                                    {rule.unit && <span style={{ fontSize: 'var(--font-sm)', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 4 }}>{rule.unit}</span>}
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                                    <span style={{ fontWeight: 500, fontSize: 'var(--font-base)' }}>{rule.signal_label}</span>
+                                                    {rule.source === 'ai_extracted' && (
+                                                        <span style={{ fontSize: 11, fontWeight: 600, padding: '1px 6px', borderRadius: 8, background: 'var(--accent-muted)', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI</span>
+                                                    )}
                                                 </div>
+                                                {rule.criteria_text ? (
+                                                    <div style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--accent)', marginTop: 2 }}>
+                                                        {rule.criteria_text}
+                                                    </div>
+                                                ) : rule.operator === 'BETWEEN' ? (
+                                                    <div style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--accent)', marginTop: 2 }}>
+                                                        {rule.min_value}–{rule.max_value}
+                                                        {rule.unit && <span style={{ fontSize: 'var(--font-sm)', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 4 }}>{rule.unit}</span>}
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--accent)', marginTop: 2 }}>
+                                                        {operatorLabels[rule.operator] || rule.operator}{' '}
+                                                        {rule.threshold_number != null ? rule.threshold_number : rule.threshold_text || ''}
+                                                        {rule.threshold_list && JSON.parse(rule.threshold_list).join(', ')}
+                                                        {rule.unit && <span style={{ fontSize: 'var(--font-sm)', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 4 }}>{rule.unit}</span>}
+                                                    </div>
+                                                )}
                                             </div>
                                             <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
-                                                <button className="btn btn-sm btn-ghost" onClick={() => { setEditingRule(rule); setSignalForm({ signal_type_id: rule.id, operator: rule.operator, threshold_number: rule.threshold_number?.toString() ?? '', unit: rule.unit ?? '' }); }} style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)' }}>Edit</button>
-                                                <button className="btn btn-sm btn-ghost" onClick={() => handleDeleteSignal(rule.id)} style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)' }}>✕</button>
+                                                <button className="btn btn-sm btn-ghost" onClick={() => { setEditingRule(rule); setSignalForm({ mode: rule.source === 'ai_extracted' || !rule.signal_type_id ? 'freeform' : 'catalog', signal_type_id: rule.signal_type_id || '', signal_label: rule.signal_label || '', criteria_text: rule.criteria_text || '', operator: rule.operator, threshold_number: rule.threshold_number?.toString() ?? '', min_value: rule.min_value?.toString() ?? '', max_value: rule.max_value?.toString() ?? '', unit: rule.unit ?? '' }); }} style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-sm)' }}>Edit</button>
+                                                <button className="btn btn-sm btn-ghost" onClick={() => handleDeleteSignal(rule.id)} style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-sm)' }}>✕</button>
                                             </div>
                                         </div>
                                     ))}
@@ -661,86 +914,6 @@ export default function TrialDetailPage() {
                     </div>
                 </div>
             </div>
-
-            {/* Cases Tabs */}
-            {(() => {
-                const SCREENING_STATUSES = ['NEW', 'IN_REVIEW', 'PENDING_INFO', 'LIKELY_ELIGIBLE'];
-                const all = trial.screening_cases || [];
-                const potentialCases = all.filter(c => c.status === 'FUTURE_CANDIDATE');
-                const screeningCases = all.filter(c => SCREENING_STATUSES.includes(c.status));
-                const enrolledCases = all.filter(c => c.status === 'ENROLLED');
-
-                const tabStyle = (active: boolean): React.CSSProperties => ({
-                    padding: '8px 18px',
-                    fontSize: 'var(--font-sm)',
-                    fontWeight: active ? 600 : 400,
-                    color: active ? 'var(--accent)' : 'var(--text-secondary)',
-                    background: 'none',
-                    border: 'none',
-                    borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                });
-
-                const activeCases =
-                    caseTab === 'potential' ? potentialCases :
-                    caseTab === 'screening' ? screeningCases :
-                    enrolledCases;
-
-                return (
-                    <div style={{ marginTop: 'var(--space-6)' }}>
-                        {/* Tab bar */}
-                        <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: 'var(--space-4)', gap: 0 }}>
-                            <button style={tabStyle(caseTab === 'potential')} onClick={() => setCaseTab('potential')}>
-                                Potential Cases
-                                <span style={{ marginLeft: 6, fontSize: 11, background: 'var(--bg-secondary)', borderRadius: 10, padding: '1px 7px', color: 'var(--text-tertiary)' }}>{potentialCases.length}</span>
-                            </button>
-                            <button style={tabStyle(caseTab === 'screening')} onClick={() => setCaseTab('screening')}>
-                                Screening Cases
-                                <span style={{ marginLeft: 6, fontSize: 11, background: 'var(--bg-secondary)', borderRadius: 10, padding: '1px 7px', color: 'var(--text-tertiary)' }}>{screeningCases.length}</span>
-                            </button>
-                            <button style={tabStyle(caseTab === 'enrolled')} onClick={() => setCaseTab('enrolled')}>
-                                Enrolled Cases
-                                <span style={{ marginLeft: 6, fontSize: 11, background: 'var(--bg-secondary)', borderRadius: 10, padding: '1px 7px', color: 'var(--text-tertiary)' }}>{enrolledCases.length}</span>
-                            </button>
-                        </div>
-
-                        {/* Tab content */}
-                        {activeCases.length === 0 ? (
-                            <div className="card" style={{ textAlign: 'center', padding: 'var(--space-6)' }}>
-                                <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>
-                                    {caseTab === 'potential' && 'No future candidates for this trial.'}
-                                    {caseTab === 'screening' && 'No active screening cases for this trial.'}
-                                    {caseTab === 'enrolled' && 'No enrolled patients for this trial.'}
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                                <table className="data-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Patient</th>
-                                            <th>Status</th>
-                                            <th>CRC</th>
-                                            <th>Updated</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {activeCases.map(sc => (
-                                            <tr key={sc.id} onClick={() => navigate(`/screening/${sc.id}`)} style={{ cursor: 'pointer' }}>
-                                                <td className="patient-name">{sc.last_name}, {sc.first_name}</td>
-                                                <td><StatusBadge status={sc.status} /></td>
-                                                <td className="meta">{sc.assigned_user_name || '—'}</td>
-                                                <td className="meta">{formatDate(sc.updated_at)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
-                );
-            })()}
 
             {/* Add Visit Template Modal */}
             {showVisitModal && (
@@ -796,7 +969,7 @@ export default function TrialDetailPage() {
                         <div className="modal-header">
                             <div>
                                 <h3 className="modal-title">{selectedVisit.visit_name}</h3>
-                                <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                                <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', marginTop: 2 }}>
                                     Day {selectedVisit.day_offset} · Window −{selectedVisit.window_before}/+{selectedVisit.window_after}d · Reminder {selectedVisit.reminder_days_before}d before
                                 </div>
                             </div>
@@ -810,7 +983,7 @@ export default function TrialDetailPage() {
                                 onChange={e => setVisitNotes(e.target.value)}
                                 placeholder={'List the assessments for this visit, e.g.:\n• Vital signs\n• Blood draw (CBC, LFTs, HbA1c)\n• Physical exam\n• ECG\n• Patient questionnaire'}
                                 rows={10}
-                                style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 'var(--font-sm)', lineHeight: 1.6 }}
+                                style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 'var(--font-base)', lineHeight: 1.6 }}
                             />
                         </div>
                         <div className="modal-actions">
@@ -848,24 +1021,45 @@ export default function TrialDetailPage() {
                             <button className="modal-close" onClick={() => setEditingRule(null)}>✕</button>
                         </div>
                         <form onSubmit={handleUpdateSignal}>
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label className="form-label">Operator *</label>
-                                    <select className="form-select" value={signalForm.operator} onChange={e => setSignalForm({ ...signalForm, operator: e.target.value })}>
-                                        <option value="GTE">≥ Greater or equal</option>
-                                        <option value="LTE">≤ Less or equal</option>
-                                        <option value="EQ">= Equals</option>
-                                        <option value="IN">in (list)</option>
-                                    </select>
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Threshold *</label>
-                                    <input className="form-input" value={signalForm.threshold_number} onChange={e => setSignalForm({ ...signalForm, threshold_number: e.target.value })} placeholder="e.g., 8.0" required />
-                                </div>
+                            <div className="form-group">
+                                <label className="form-label">Label</label>
+                                <input className="form-input" value={signalForm.signal_label} onChange={e => setSignalForm({ ...signalForm, signal_label: e.target.value })} placeholder="e.g. FibroScan, Age, HbA1c" />
                             </div>
                             <div className="form-group">
+                                <label className="form-label">Criterion Text</label>
+                                <input className="form-input" value={signalForm.criteria_text} onChange={e => setSignalForm({ ...signalForm, criteria_text: e.target.value })} placeholder="e.g. FibroScan ≥ 8 kPa" />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Operator *</label>
+                                <select className="form-select" value={signalForm.operator} onChange={e => setSignalForm({ ...signalForm, operator: e.target.value })}>
+                                    <option value="GTE">≥ Greater or equal</option>
+                                    <option value="LTE">≤ Less or equal</option>
+                                    <option value="EQ">= Equals</option>
+                                    <option value="BETWEEN">↔ Range (between)</option>
+                                    <option value="IN">in (list)</option>
+                                    <option value="TEXT_MATCH">≈ Qualitative match</option>
+                                </select>
+                            </div>
+                            {signalForm.operator === 'BETWEEN' ? (
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Min</label>
+                                        <input className="form-input" type="number" step="any" value={signalForm.min_value} onChange={e => setSignalForm({ ...signalForm, min_value: e.target.value })} placeholder="e.g. 18" />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Max</label>
+                                        <input className="form-input" type="number" step="any" value={signalForm.max_value} onChange={e => setSignalForm({ ...signalForm, max_value: e.target.value })} placeholder="e.g. 75" />
+                                    </div>
+                                </div>
+                            ) : signalForm.operator !== 'TEXT_MATCH' ? (
+                                <div className="form-group">
+                                    <label className="form-label">Threshold</label>
+                                    <input className="form-input" type="number" step="any" value={signalForm.threshold_number} onChange={e => setSignalForm({ ...signalForm, threshold_number: e.target.value })} placeholder="e.g. 8.0" />
+                                </div>
+                            ) : null}
+                            <div className="form-group">
                                 <label className="form-label">Unit</label>
-                                <input className="form-input" value={signalForm.unit} onChange={e => setSignalForm({ ...signalForm, unit: e.target.value })} placeholder="e.g., kPa, IU/mL" />
+                                <input className="form-input" value={signalForm.unit} onChange={e => setSignalForm({ ...signalForm, unit: e.target.value })} placeholder="e.g. kPa, years, %" />
                             </div>
                             <div className="modal-actions">
                                 <button type="button" className="btn btn-secondary" onClick={() => setEditingRule(null)}>Cancel</button>
@@ -878,41 +1072,101 @@ export default function TrialDetailPage() {
 
             {/* Add Signal Rule Modal */}
             {showSignalModal && (
-                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowSignalModal(false)}>
+                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && (setShowSignalModal(false), setSignalForm(emptySignalForm))}>
                     <div className="modal">
                         <div className="modal-header">
                             <h3 className="modal-title">Add Signal Rule</h3>
-                            <button className="modal-close" onClick={() => setShowSignalModal(false)}>✕</button>
+                            <button className="modal-close" onClick={() => { setShowSignalModal(false); setSignalForm(emptySignalForm); }}>✕</button>
+                        </div>
+                        {/* Mode toggle */}
+                        <div style={{ display: 'flex', gap: 0, margin: '0 0 var(--space-5)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                            {(['freeform', 'catalog'] as const).map(m => (
+                                <button key={m} type="button"
+                                    onClick={() => setSignalForm({ ...signalForm, mode: m })}
+                                    style={{ flex: 1, padding: 'var(--space-2)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 'var(--font-base)', fontWeight: 600, transition: 'all var(--transition-fast)',
+                                             background: signalForm.mode === m ? 'var(--accent)' : 'var(--bg-surface)',
+                                             color: signalForm.mode === m ? 'white' : 'var(--text-secondary)' }}>
+                                    {m === 'freeform' ? 'Free-form' : 'Signal Catalog'}
+                                </button>
+                            ))}
                         </div>
                         <form onSubmit={handleAddSignal}>
-                            <div className="form-group">
-                                <label className="form-label">Signal Type *</label>
-                                <select className="form-select" value={signalForm.signal_type_id} onChange={e => setSignalForm({ ...signalForm, signal_type_id: e.target.value })} required>
-                                    <option value="">Select signal…</option>
-                                    {signalTypes.map(st => <option key={st.id} value={st.id}>{st.label} ({st.data_type})</option>)}
-                                </select>
-                            </div>
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label className="form-label">Operator *</label>
-                                    <select className="form-select" value={signalForm.operator} onChange={e => setSignalForm({ ...signalForm, operator: e.target.value })}>
-                                        <option value="GTE">≥ Greater or equal</option>
-                                        <option value="LTE">≤ Less or equal</option>
-                                        <option value="EQ">= Equals</option>
-                                        <option value="IN">in (list)</option>
-                                    </select>
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Threshold *</label>
-                                    <input className="form-input" value={signalForm.threshold_number} onChange={e => setSignalForm({ ...signalForm, threshold_number: e.target.value })} placeholder="e.g., 8.0" required />
-                                </div>
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Unit</label>
-                                <input className="form-input" value={signalForm.unit} onChange={e => setSignalForm({ ...signalForm, unit: e.target.value })} placeholder="e.g., kPa, IU/mL" />
-                            </div>
+                            {signalForm.mode === 'freeform' ? (
+                                <>
+                                    <div className="form-group">
+                                        <label className="form-label">Label *</label>
+                                        <input className="form-input" value={signalForm.signal_label} onChange={e => setSignalForm({ ...signalForm, signal_label: e.target.value })} placeholder="e.g. FibroScan, Age, HbA1c" required />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Criterion Text *</label>
+                                        <input className="form-input" value={signalForm.criteria_text} onChange={e => setSignalForm({ ...signalForm, criteria_text: e.target.value })} placeholder="e.g. FibroScan ≥ 8 kPa or Age 18–75 years" required />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Operator *</label>
+                                        <select className="form-select" value={signalForm.operator} onChange={e => setSignalForm({ ...signalForm, operator: e.target.value })}>
+                                            <option value="GTE">≥ Greater or equal</option>
+                                            <option value="LTE">≤ Less or equal</option>
+                                            <option value="EQ">= Equals</option>
+                                            <option value="BETWEEN">↔ Range (between)</option>
+                                            <option value="IN">in (list)</option>
+                                            <option value="TEXT_MATCH">≈ Qualitative match</option>
+                                        </select>
+                                    </div>
+                                    {signalForm.operator === 'BETWEEN' ? (
+                                        <div className="form-row">
+                                            <div className="form-group">
+                                                <label className="form-label">Min</label>
+                                                <input className="form-input" type="number" step="any" value={signalForm.min_value} onChange={e => setSignalForm({ ...signalForm, min_value: e.target.value })} placeholder="e.g. 18" />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Max</label>
+                                                <input className="form-input" type="number" step="any" value={signalForm.max_value} onChange={e => setSignalForm({ ...signalForm, max_value: e.target.value })} placeholder="e.g. 75" />
+                                            </div>
+                                        </div>
+                                    ) : signalForm.operator !== 'TEXT_MATCH' ? (
+                                        <div className="form-group">
+                                            <label className="form-label">Threshold</label>
+                                            <input className="form-input" type="number" step="any" value={signalForm.threshold_number} onChange={e => setSignalForm({ ...signalForm, threshold_number: e.target.value })} placeholder="e.g. 8.0" />
+                                        </div>
+                                    ) : null}
+                                    <div className="form-group">
+                                        <label className="form-label">Unit</label>
+                                        <input className="form-input" value={signalForm.unit} onChange={e => setSignalForm({ ...signalForm, unit: e.target.value })} placeholder="e.g. kPa, years, %" />
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="form-group">
+                                        <label className="form-label">Signal Type *</label>
+                                        <select className="form-select" value={signalForm.signal_type_id} onChange={e => setSignalForm({ ...signalForm, signal_type_id: e.target.value })} required>
+                                            <option value="">Select signal…</option>
+                                            {signalTypes.map(st => <option key={st.id} value={st.id}>{st.label} ({st.data_type})</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Operator *</label>
+                                            <select className="form-select" value={signalForm.operator} onChange={e => setSignalForm({ ...signalForm, operator: e.target.value })}>
+                                                <option value="GTE">≥ Greater or equal</option>
+                                                <option value="LTE">≤ Less or equal</option>
+                                                <option value="EQ">= Equals</option>
+                                                <option value="BETWEEN">↔ Range (between)</option>
+                                                <option value="IN">in (list)</option>
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Threshold *</label>
+                                            <input className="form-input" type="number" step="any" value={signalForm.threshold_number} onChange={e => setSignalForm({ ...signalForm, threshold_number: e.target.value })} placeholder="e.g. 8.0" required />
+                                        </div>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Unit</label>
+                                        <input className="form-input" value={signalForm.unit} onChange={e => setSignalForm({ ...signalForm, unit: e.target.value })} placeholder="e.g. kPa, IU/mL" />
+                                    </div>
+                                </>
+                            )}
                             <div className="modal-actions">
-                                <button type="button" className="btn btn-secondary" onClick={() => setShowSignalModal(false)}>Cancel</button>
+                                <button type="button" className="btn btn-secondary" onClick={() => { setShowSignalModal(false); setSignalForm(emptySignalForm); }}>Cancel</button>
                                 <button type="submit" className="btn btn-primary">Add Rule</button>
                             </div>
                         </form>

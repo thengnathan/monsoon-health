@@ -3,105 +3,83 @@ import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import pdfParse from 'pdf-parse';
 import { authMiddleware, requireRole, auditLog } from '../middleware/auth';
-import { extractProtocolData, extractEligibilityCriteria, extractVisitSchedule, extractSignalRulesFromCriteria, cleanPdfText, type ExtractedVisit, type ExtractedSignalRule } from '../services/aiIngestion';
+import { extractProtocol, cleanPdfText } from '../services/aiIngestion';
 import { runProtocolMatching } from '../services/patientMatching';
-import { embedAndStoreDocument } from '../services/embeddings';
+import type { ExtractedSignalRule, ExtractedVisit } from '../types/clinicalSchemas';
 
-function extractCriteria(text: string): { inclusion: string | null; exclusion: string | null } {
-    const result = { inclusion: null as string | null, exclusion: null as string | null };
-    const normalized = text.replace(/\r\n/g, '\n');
-    const inclMatch = normalized.match(/(?:inclusion\s+criteria|eligibility\s+criteria|key\s+inclusion)[:\s]*\n([\s\S]*?)(?=(?:exclusion\s+criteria|key\s+exclusion|study\s+procedures|study\s+design|endpoints|primary\s+endpoint|statistical)|$)/i);
-    if (inclMatch) result.inclusion = cleanCriteriaText(inclMatch[1]);
-    const exclMatch = normalized.match(/(?:exclusion\s+criteria|key\s+exclusion)[:\s]*\n([\s\S]*?)(?=(?:study\s+procedures|study\s+design|endpoints|primary\s+endpoint|statistical|visit\s+schedule|study\s+assessments)|$)/i);
-    if (exclMatch) result.exclusion = cleanCriteriaText(exclMatch[1]);
-    return result;
-}
+// Helper: insert AI-extracted signal rules into trial_signal_rules
+async function insertExtractedRules(
+    db: { query: (sql: string, params: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> },
+    siteId: string, trialId: string, rules: ExtractedSignalRule[]
+) {
+    // Remove previous AI-extracted rules for this trial
+    await db.query(
+        "DELETE FROM trial_signal_rules WHERE trial_id = $1 AND site_id = $2 AND source = 'ai_extracted'",
+        [trialId, siteId]
+    );
 
-function cleanCriteriaText(raw: string): string | null {
-    const lines = raw.split('\n')
-        .map(l => l.replace(/^[\s•●○▪\-–—\d.)+]+\s*/, '').trim())
-        .filter(l => l.length > 5 && l.length < 500)
-        .slice(0, 30);
-    return lines.length > 0 ? lines.join('\n') : null;
-}
-
-function formatAssessmentsAsNotes(assessments: ExtractedVisit['assessments']): string {
-    if (!assessments || assessments.length === 0) return '';
-
-    // Group by category
-    const byCategory = new Map<string, typeof assessments>();
-    for (const a of assessments) {
-        const cat = a.category || 'General';
-        if (!byCategory.has(cat)) byCategory.set(cat, []);
-        byCategory.get(cat)!.push(a);
-    }
-
-    const lines: string[] = [];
-    for (const [category, items] of byCategory) {
-        lines.push(`${category}:`);
-        for (const item of items) {
-            let line = `  • ${item.name}`;
-            if (item.conditional) line += ' *';
-            if (item.note) line += ` (${item.note})`;
-            lines.push(line);
-        }
-    }
-    return lines.join('\n');
-}
-
-async function upsertVisitSchedule(db: { query: (text: string, values?: unknown[]) => Promise<{ rows: unknown[] }> }, siteId: string, trialId: string, visits: ExtractedVisit[]) {
-    if (visits.length === 0) return;
-    await db.query('DELETE FROM visit_templates WHERE trial_id = $1 AND site_id = $2', [trialId, siteId]);
-    for (let i = 0; i < visits.length; i++) {
-        const v = visits[i];
-        const notes = formatAssessmentsAsNotes(v.assessments);
-        await db.query(
-            `INSERT INTO visit_templates (id, site_id, trial_id, visit_name, day_offset, window_before, window_after, reminder_days_before, notes, sort_order)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-            [uuidv4(), siteId, trialId, v.name, v.day_offset, v.window_before ?? 3, v.window_after ?? 3, 3, notes || null, i]
-        );
-    }
-    console.log(`[Protocol] Upserted ${visits.length} visit templates from schedule of assessments`);
-}
-
-async function upsertSignalRules(db: { query: (text: string, values?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> }, siteId: string, trialId: string, rules: ExtractedSignalRule[]) {
-    if (rules.length === 0) return;
-    // Delete existing auto-extracted signal rules for this trial
-    await db.query('DELETE FROM trial_signal_rules WHERE trial_id = $1 AND site_id = $2', [trialId, siteId]);
     for (const rule of rules) {
-        // Upsert the signal type by name (create if it doesn't exist for this site)
-        let signalType = (await db.query(
-            'SELECT id FROM signal_types WHERE site_id = $1 AND name = $2',
-            [siteId, rule.name]
+        const id = uuidv4();
+        // Try to match signal_label to an existing signal_type
+        const match = (await db.query(
+            'SELECT id FROM signal_types WHERE site_id = $1 AND label ILIKE $2 LIMIT 1',
+            [siteId, rule.signal_label]
         )).rows[0];
 
-        if (!signalType) {
-            const stId = uuidv4();
-            // Map Claude's data_type to the DB enum: NUMBER | STRING | ENUM
-            const valueType = rule.data_type === 'number' ? 'NUMBER' : 'STRING';
-            await db.query(
-                `INSERT INTO signal_types (id, site_id, name, label, value_type, unit) VALUES ($1, $2, $3, $4, $5, $6)`,
-                [stId, siteId, rule.name, rule.label, valueType, rule.unit || null]
-            );
-            signalType = { id: stId };
-        }
-
-        // DB operator constraint: GTE | LTE | EQ | IN
-        // Map extended operators: RANGE → GTE (store min; max stored as threshold_text), HAS_HISTORY/NOT_HAS_HISTORY → EQ
-        const dbOperator = rule.operator === 'RANGE' ? 'GTE'
-            : (rule.operator === 'HAS_HISTORY' || rule.operator === 'NOT_HAS_HISTORY') ? 'EQ'
-            : rule.operator;
-        const thresholdText = rule.operator === 'RANGE' && rule.threshold_number_max != null
-            ? `max:${rule.threshold_number_max}`
-            : rule.threshold_text ?? null;
-
         await db.query(
-            `INSERT INTO trial_signal_rules (id, site_id, trial_id, signal_type_id, operator, threshold_number, threshold_text, is_active)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, true)`,
-            [uuidv4(), siteId, trialId, signalType.id, dbOperator, rule.threshold_number ?? null, thresholdText]
+            `INSERT INTO trial_signal_rules
+             (id, site_id, trial_id, signal_type_id, signal_label, operator, threshold_number, min_value, max_value, criteria_text, source, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ai_extracted', true)`,
+            [
+                id, siteId, trialId,
+                match ? (match as { id: string }).id : null,
+                rule.signal_label,
+                rule.operator || 'TEXT_MATCH',
+                rule.threshold_number ?? null,
+                rule.min_value ?? null,
+                rule.max_value ?? null,
+                rule.criteria_text,
+            ]
         );
     }
-    console.log(`[Protocol] Upserted ${rules.length} signal rules from inclusion criteria`);
+    console.log(`[Protocol] Inserted ${rules.length} AI-extracted signal rules`);
+}
+
+
+// Helper: insert AI-extracted visit templates
+async function insertExtractedVisits(
+    db: { query: (sql: string, params: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> },
+    siteId: string, trialId: string, visits: ExtractedVisit[]
+) {
+    // Remove previous AI-extracted visit templates for this trial
+    await db.query(
+        "DELETE FROM visit_templates WHERE trial_id = $1 AND site_id = $2 AND source = 'ai_extracted'",
+        [trialId, siteId]
+    );
+
+    const scheduledVisits = visits.filter(v => typeof v.day_offset === 'number' && !isNaN(v.day_offset));
+    for (let i = 0; i < scheduledVisits.length; i++) {
+        const v = scheduledVisits[i];
+        const id = uuidv4();
+        await db.query(
+            `INSERT INTO visit_templates
+             (id, site_id, trial_id, visit_name, day_offset, window_before, window_after, reminder_days_before, notes, sort_order, source)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ai_extracted')`,
+            [
+                id, siteId, trialId,
+                v.visit_name,
+                v.day_offset,
+                v.window_before ?? 0,
+                v.window_after ?? 0,
+                3,                      // default reminder: 3 days before
+                v.notes ?? null,
+                i + 1,                  // sort_order 1-based
+            ]
+        );
+    }
+    const skipped = visits.length - scheduledVisits.length;
+    if (skipped > 0) console.log(`[Protocol] Skipped ${skipped} visits with no fixed day_offset (e.g. Early Termination, Unscheduled)`);
+    console.log(`[Protocol] Inserted ${scheduledVisits.length} AI-extracted visit templates`);
 }
 
 const router = Router();
@@ -175,16 +153,16 @@ router.get('/:id', async (req: Request, res: Response) => {
     if (!trial) { res.status(404).json({ error: 'Trial not found' }); return; }
 
     const [rules, cases, protocol, visit_templates] = await Promise.all([
-        db.query(`SELECT tsr.*, st.name as signal_name, st.label as signal_label, st.unit, st.value_type
-                  FROM trial_signal_rules tsr JOIN signal_types st ON tsr.signal_type_id = st.id
-                  WHERE tsr.trial_id = $1 AND tsr.site_id = $2 ORDER BY st.label`,
+        db.query(`SELECT tsr.*, st.name as signal_name, COALESCE(st.label, tsr.signal_label) as signal_label, COALESCE(st.unit, '') as unit, st.value_type
+                  FROM trial_signal_rules tsr LEFT JOIN signal_types st ON tsr.signal_type_id = st.id
+                  WHERE tsr.trial_id = $1 AND tsr.site_id = $2 ORDER BY COALESCE(st.label, tsr.signal_label)`,
                  [req.params.id, req.user.site_id]),
         db.query(`SELECT sc.*, p.first_name, p.last_name, p.dob, u.name as assigned_user_name
                   FROM screening_cases sc JOIN patients p ON sc.patient_id = p.id
                   LEFT JOIN users u ON sc.assigned_user_id = u.id
                   WHERE sc.trial_id = $1 AND sc.site_id = $2 ORDER BY sc.updated_at DESC`,
                  [req.params.id, req.user.site_id]),
-        db.query(`SELECT id, filename, mime_type, file_size, version, uploaded_by_user_id, created_at
+        db.query(`SELECT id, filename, mime_type, file_size, version, uploaded_by_user_id, created_at, structured_data
                   FROM trial_protocols WHERE trial_id = $1 AND site_id = $2 ORDER BY created_at DESC LIMIT 1`,
                  [req.params.id, req.user.site_id]),
         db.query(`SELECT * FROM visit_templates WHERE trial_id = $1 AND site_id = $2 ORDER BY sort_order, day_offset`,
@@ -284,63 +262,54 @@ router.post('/:id/protocol', requireRole('MANAGER', 'CRC'), upload.single('file'
         (async () => {
             try {
                 const pdfData = await pdfParse(fileBuffer);
-                const cleanedText = cleanPdfText(pdfData.text);
-                const regexExtracted = extractCriteria(cleanedText);
+                const structured = await extractProtocol(pdfData.text);
+                console.log(`[Protocol] Extracted: ${structured.inclusion_criteria.length} inclusion, ${structured.exclusion_criteria.length} exclusion criteria`);
 
-                // Pass 1 (parallel): protocol metadata + visit schedule — fully independent
-                console.log('[Protocol] Pass 1: extracting protocol metadata + visit schedule in parallel...');
-                const [aiExtracted, visits] = await Promise.all([
-                    extractProtocolData(cleanedText),
-                    extractVisitSchedule(cleanedText),
-                ]);
-                console.log('[Protocol] Pass 1 complete —', aiExtracted.inclusion_criteria.length, 'inclusion,', aiExtracted.exclusion_criteria.length, 'exclusion criteria found');
-
-                const criteriaUpdates: string[] = [];
-                const criteriaVals: unknown[] = [];
-                let cp = 0;
-
-                const inclusionText = aiExtracted.raw_inclusion_text || regexExtracted.inclusion;
-                const exclusionText = aiExtracted.raw_exclusion_text || regexExtracted.exclusion;
-
-                if (inclusionText) { criteriaUpdates.push(`inclusion_criteria = $${++cp}`); criteriaVals.push(inclusionText); }
-                if (exclusionText) { criteriaUpdates.push(`exclusion_criteria = $${++cp}`); criteriaVals.push(exclusionText); }
-                if (aiExtracted.specialty) { criteriaUpdates.push(`specialty = $${++cp}`); criteriaVals.push(aiExtracted.specialty); }
-                if (aiExtracted.indication || aiExtracted.primary_endpoint) {
-                    criteriaUpdates.push(`description = $${++cp}`);
-                    criteriaVals.push([aiExtracted.indication, aiExtracted.primary_endpoint].filter(Boolean).join(' — '));
-                }
-
-                criteriaUpdates.push(`extracted_criteria_json = $${++cp}`);
-                criteriaVals.push(JSON.stringify(aiExtracted));
-
-                criteriaVals.push(trialId, siteId);
+                // Store structured data on the protocol record
                 await db.query(
-                    `UPDATE trials SET ${criteriaUpdates.join(', ')}, updated_at = NOW() WHERE id = $${++cp} AND site_id = $${++cp}`,
-                    criteriaVals
+                    'UPDATE trial_protocols SET structured_data = $1 WHERE id = $2',
+                    [JSON.stringify(structured), id]
                 );
 
-                await upsertVisitSchedule(db, siteId, trialId, visits);
+                // Update trial table fields from extracted data
+                const updates: string[] = [];
+                const vals: unknown[] = [];
+                let p = 0;
 
-                // Pass 2: signal rules — reads only the already-extracted inclusion + exclusion text, not the full doc
-                console.log('[Protocol] Pass 2: extracting signal rules from inclusion criteria...');
-                const signalRules = await extractSignalRulesFromCriteria(
-                    inclusionText || '',
-                    aiExtracted.specialty || undefined
+                if (structured.specialty) { updates.push(`specialty = $${++p}`); vals.push(structured.specialty); }
+                if (structured.indication || structured.primary_endpoint) {
+                    updates.push(`description = $${++p}`);
+                    vals.push([structured.indication, structured.primary_endpoint].filter(Boolean).join(' — '));
+                }
+                if (structured.inclusion_criteria.length > 0) {
+                    updates.push(`inclusion_criteria = $${++p}`);
+                    vals.push(structured.inclusion_criteria.join('\n'));
+                }
+                if (structured.exclusion_criteria.length > 0) {
+                    updates.push(`exclusion_criteria = $${++p}`);
+                    vals.push(structured.exclusion_criteria.join('\n'));
+                }
+                // Store full structured data for patient matching
+                updates.push(`extracted_criteria_json = $${++p}`);
+                vals.push(JSON.stringify(structured));
+
+                vals.push(trialId, siteId);
+                await db.query(
+                    `UPDATE trials SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${++p} AND site_id = $${++p}`,
+                    vals
                 );
-                await upsertSignalRules(db, siteId, trialId, signalRules);
 
-                // Embed protocol for RAG retrieval
-                try {
-                    await embedAndStoreDocument(db, id, 'protocol', siteId, cleanedText, {
-                        trial_id: trialId,
-                        title: aiExtracted.title,
-                        sponsor: aiExtracted.sponsor,
-                    });
-                } catch (embErr) {
-                    console.error('[Protocol] Embedding failed (non-fatal):', embErr);
+                // Insert AI-extracted signal rules
+                if (structured.extracted_signal_rules?.length) {
+                    await insertExtractedRules(db, siteId, trialId, structured.extracted_signal_rules);
                 }
 
-                // Now run patient matching
+                // Insert AI-extracted visit templates
+                if (structured.extracted_visits?.length) {
+                    await insertExtractedVisits(db, siteId, trialId, structured.extracted_visits);
+                }
+
+                // Run patient matching
                 console.log('[Protocol] Triggering patient matching job...');
                 const { matched, assigned } = await runProtocolMatching(db, siteId, trialId, userId);
                 console.log(`[Protocol] Matching done: ${matched} patients evaluated, ${assigned} auto-assigned`);
@@ -395,40 +364,53 @@ router.post('/:id/protocol/reextract', requireRole('MANAGER', 'CRC'), async (req
 
             const buffer = Buffer.from(await fileData.arrayBuffer());
             const pdfData = await pdfParse(buffer);
-            const cleanedText = cleanPdfText(pdfData.text);
+            const structured = await extractProtocol(pdfData.text);
+            console.log(`[Protocol] Re-extraction complete: ${structured.inclusion_criteria.length} inclusion, ${structured.exclusion_criteria.length} exclusion criteria`);
 
-            // Run eligibility and visit schedule extraction in parallel
-            console.log('[Protocol] Re-running eligibility + visit schedule extraction...');
-            const [eligibility, visits] = await Promise.all([
-                extractEligibilityCriteria(cleanedText),
-                extractVisitSchedule(cleanedText),
-            ]);
-            console.log('[Protocol] Eligibility re-extraction complete');
-
-            // Extract signal rules from the just-extracted eligibility criteria (not the full doc)
-            const trialMeta = (await db.query('SELECT specialty FROM trials WHERE id = $1', [trialId])).rows[0];
-            const signalRules = await extractSignalRulesFromCriteria(
-                eligibility.inclusion,
-                trialMeta?.specialty || undefined
+            // Update protocol record's structured_data
+            await db.query(
+                'UPDATE trial_protocols SET structured_data = $1 WHERE trial_id = $2 AND site_id = $3',
+                [JSON.stringify(structured), trialId, siteId]
             );
 
             const updates: string[] = [];
             const vals: unknown[] = [];
             let p = 0;
 
-            if (eligibility.inclusion) { updates.push(`inclusion_criteria = $${++p}`); vals.push(eligibility.inclusion); }
-            if (eligibility.exclusion) { updates.push(`exclusion_criteria = $${++p}`); vals.push(eligibility.exclusion); }
-            if (updates.length === 0) { console.log('[Protocol] No criteria extracted — skipping update'); return; }
-            vals.push(trialId, siteId);
+            if (structured.specialty) { updates.push(`specialty = $${++p}`); vals.push(structured.specialty); }
+            if (structured.indication || structured.primary_endpoint) {
+                updates.push(`description = $${++p}`);
+                vals.push([structured.indication, structured.primary_endpoint].filter(Boolean).join(' — '));
+            }
+            if (structured.inclusion_criteria.length > 0) {
+                updates.push(`inclusion_criteria = $${++p}`);
+                vals.push(structured.inclusion_criteria.join('\n'));
+            }
+            if (structured.exclusion_criteria.length > 0) {
+                updates.push(`exclusion_criteria = $${++p}`);
+                vals.push(structured.exclusion_criteria.join('\n'));
+            }
+            updates.push(`extracted_criteria_json = $${++p}`);
+            vals.push(JSON.stringify(structured));
 
-            await db.query(
-                `UPDATE trials SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${++p} AND site_id = $${++p}`,
-                vals
-            );
-            console.log('[Protocol] Trial criteria updated from re-extraction');
+            if (updates.length > 0) {
+                vals.push(trialId, siteId);
+                await db.query(
+                    `UPDATE trials SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${++p} AND site_id = $${++p}`,
+                    vals
+                );
+            }
 
-            await upsertVisitSchedule(db, siteId, trialId, visits);
-            await upsertSignalRules(db, siteId, trialId, signalRules);
+            // Insert AI-extracted signal rules
+            if (structured.extracted_signal_rules?.length) {
+                await insertExtractedRules(db, siteId, trialId, structured.extracted_signal_rules);
+            }
+
+            // Insert AI-extracted visit templates
+            if (structured.extracted_visits?.length) {
+                await insertExtractedVisits(db, siteId, trialId, structured.extracted_visits);
+            }
+
             await runProtocolMatching(db, siteId, trialId, userId);
         } catch (err) {
             console.error('[Protocol] Re-extraction error:', err);
@@ -446,12 +428,16 @@ router.delete('/:id/protocol', requireRole('MANAGER', 'CRC'), async (req: Reques
     if (!protocol) { res.status(404).json({ error: 'No protocol found' }); return; }
 
     await supabase.storage.from('trial-protocols').remove([protocol.storage_path]);
-    await db.query('DELETE FROM trial_protocols WHERE trial_id = $1 AND site_id = $2', [req.params.id, req.user.site_id]);
-    await db.query(
-        `UPDATE trials SET inclusion_criteria = NULL, exclusion_criteria = NULL, extracted_criteria_json = NULL, updated_at = NOW()
-         WHERE id = $1 AND site_id = $2`,
-        [req.params.id, req.user.site_id]
-    );
+    await Promise.all([
+        db.query('DELETE FROM trial_protocols WHERE trial_id = $1 AND site_id = $2', [req.params.id, req.user.site_id]),
+        db.query("DELETE FROM visit_templates WHERE trial_id = $1 AND site_id = $2 AND source = 'ai_extracted'", [req.params.id, req.user.site_id]),
+        db.query("DELETE FROM trial_signal_rules WHERE trial_id = $1 AND site_id = $2 AND source = 'ai_extracted'", [req.params.id, req.user.site_id]),
+        db.query(
+            `UPDATE trials SET inclusion_criteria = NULL, exclusion_criteria = NULL, extracted_criteria_json = NULL, updated_at = NOW()
+             WHERE id = $1 AND site_id = $2`,
+            [req.params.id, req.user.site_id]
+        ),
+    ]);
     res.json({ message: 'Protocol deleted' });
 });
 
@@ -460,9 +446,10 @@ router.delete('/:id/protocol', requireRole('MANAGER', 'CRC'), async (req: Reques
 router.get('/:id/signal-rules', async (req: Request, res: Response) => {
     const db = req.app.locals.db;
     const { rows } = await db.query(
-        `SELECT tsr.*, st.name as signal_name, st.label as signal_label, st.unit, st.value_type
-         FROM trial_signal_rules tsr JOIN signal_types st ON tsr.signal_type_id = st.id
-         WHERE tsr.trial_id = $1 AND tsr.site_id = $2`,
+        `SELECT tsr.*, st.name as signal_name, COALESCE(st.label, tsr.signal_label) as signal_label, COALESCE(st.unit, '') as unit, st.value_type
+         FROM trial_signal_rules tsr LEFT JOIN signal_types st ON tsr.signal_type_id = st.id
+         WHERE tsr.trial_id = $1 AND tsr.site_id = $2
+         ORDER BY COALESCE(st.label, tsr.signal_label)`,
         [req.params.id, req.user.site_id]
     );
     res.json(rows);
@@ -471,27 +458,37 @@ router.get('/:id/signal-rules', async (req: Request, res: Response) => {
 router.post('/:id/signal-rules', requireRole('MANAGER', 'CRC'), async (req: Request, res: Response) => {
     const db = req.app.locals.db;
     const id = uuidv4();
-    const { signal_type_id, operator, threshold_number, threshold_text, threshold_list } = req.body as {
-        signal_type_id?: string; operator?: string; threshold_number?: number;
+    const { signal_type_id, signal_label, operator, threshold_number, threshold_text, threshold_list,
+            criteria_text, min_value, max_value } = req.body as {
+        signal_type_id?: string; signal_label?: string; operator?: string; threshold_number?: number;
         threshold_text?: string; threshold_list?: unknown[];
+        criteria_text?: string; min_value?: number; max_value?: number;
     };
 
-    if (!signal_type_id || !operator) {
-        res.status(400).json({ error: 'signal_type_id and operator required' }); return;
+    if (!operator) {
+        res.status(400).json({ error: 'operator is required' }); return;
+    }
+    if (!signal_type_id && !signal_label) {
+        res.status(400).json({ error: 'signal_type_id or signal_label is required' }); return;
     }
 
     await db.query(
-        `INSERT INTO trial_signal_rules (id, site_id, trial_id, signal_type_id, operator, threshold_number, threshold_text, threshold_list, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)`,
-        [id, req.user.site_id, req.params.id, signal_type_id, operator,
+        `INSERT INTO trial_signal_rules (id, site_id, trial_id, signal_type_id, signal_label, operator,
+         threshold_number, threshold_text, threshold_list, criteria_text, min_value, max_value, source, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'manual', true)`,
+        [id, req.user.site_id, req.params.id,
+         signal_type_id || null, signal_label || null, operator,
          threshold_number != null ? threshold_number : null,
          threshold_text || null,
-         threshold_list ? JSON.stringify(threshold_list) : null]
+         threshold_list ? JSON.stringify(threshold_list) : null,
+         criteria_text || null,
+         min_value != null ? min_value : null,
+         max_value != null ? max_value : null]
     );
 
     const rule = (await db.query(
-        `SELECT tsr.*, st.name as signal_name, st.label as signal_label, st.unit
-         FROM trial_signal_rules tsr JOIN signal_types st ON tsr.signal_type_id = st.id
+        `SELECT tsr.*, st.name as signal_name, COALESCE(st.label, tsr.signal_label) as signal_label, COALESCE(st.unit, '') as unit
+         FROM trial_signal_rules tsr LEFT JOIN signal_types st ON tsr.signal_type_id = st.id
          WHERE tsr.id = $1`,
         [id]
     )).rows[0];
@@ -511,7 +508,7 @@ router.patch('/signal-rules/:ruleId', requireRole('MANAGER', 'CRC'), async (req:
     let p = 0;
 
     const body = req.body as Record<string, unknown>;
-    for (const field of ['operator', 'threshold_number', 'threshold_text', 'is_active']) {
+    for (const field of ['operator', 'threshold_number', 'threshold_text', 'is_active', 'signal_label', 'criteria_text', 'min_value', 'max_value']) {
         if (body[field] !== undefined) { updates.push(`${field} = $${++p}`); values.push(body[field]); }
     }
     if (body.threshold_list !== undefined) {

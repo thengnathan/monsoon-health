@@ -1,15 +1,12 @@
 import { SignIn } from '@clerk/clerk-react';
-import LiquidSilkBackground from '../components/LiquidSilkBackground';
+import WaveBackground from '../components/WaveBackground';
 
 export default function LoginPage() {
     return (
         <div className="login-page">
-            <LiquidSilkBackground
-                color="#5a8fa8"
-                speed={1.0}
-                scale={1.2}
-                noiseIntensity={0.4}
-                rotation={1.2}
+            <WaveBackground
+                backgroundColor="#0a141e"
+                strokeColor="rgba(136,189,223,0.25)"
             />
             <div style={{ position: 'relative', zIndex: 10 }}>
                 <SignIn

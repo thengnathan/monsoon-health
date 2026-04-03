@@ -10,8 +10,8 @@
 }
 
 @keyframes page-fade-in {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; }
+    to   { opacity: 1; }
 }
 
 /* --- Reset & Base --- */
@@ -283,12 +283,13 @@ button {
   display: flex;
   flex-direction: column;
   z-index: 100;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .sidebar-brand {
   padding: var(--space-6) var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .sidebar-brand h2 {
@@ -332,6 +333,8 @@ button {
 .sidebar-nav {
   padding: var(--space-3) var(--space-3);
   flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .sidebar-section-label {
@@ -381,7 +384,8 @@ button {
 
 .sidebar-footer {
   padding: var(--space-4) var(--space-5);
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
 }
 
 .sidebar-user {
@@ -420,6 +424,11 @@ button {
 .sidebar-user-role {
   font-size: var(--font-xs);
   color: var(--text-tertiary);
+}
+
+/* --- Criteria toggle hover --- */
+.criteria-toggle:hover {
+  background: var(--bg-surface-hover) !important;
 }
 
 /* --- Cards --- */
@@ -1238,10 +1247,10 @@ button {
 }
 
 .filter-pill {
-  padding: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-4);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-full);
-  font-size: var(--font-xs);
+  font-size: var(--font-sm);
   font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
@@ -1379,6 +1388,25 @@ button {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* --- Skeleton loader --- */
+@keyframes skeleton-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-secondary) 25%,
+    var(--border) 50%,
+    var(--bg-secondary) 75%
+  );
+  background-size: 800px 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: 4px;
+  flex-shrink: 0;
 }
 
 /* --- Responsive --- */

@@ -4,6 +4,7 @@ import type {
     SignalType, ScreenFailReason, ReferralSource, Note,
     PatientVisit, TodayData, UpcomingVisit, UploadResult,
     EnrollResult, AddSignalResult, PendingItem, BatchImportResult,
+    PatientClinicalData,
 } from './types';
 
 const API_BASE = '/api';
@@ -189,6 +190,7 @@ export const api = {
         if (!res.ok) throw new Error((data as { error?: string }).error || 'Upload failed');
         return data as UploadResult;
     },
+    getPatientClinicalData: (patientId: string) => request<PatientClinicalData>(`/patients/${patientId}/clinical-data`),
     getPatientDocuments: (patientId: string) => request(`/patients/${patientId}/documents`),
     getDocumentUrl: (patientId: string, docId: string) => `${API_BASE}/patients/${patientId}/documents/${docId}/download`,
     deletePatientDocument: (patientId: string, docId: string) => request(`/patients/${patientId}/documents/${docId}`, { method: 'DELETE' }),

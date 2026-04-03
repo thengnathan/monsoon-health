@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { pool, supabase } from './db/init';
-import { isOllamaRunning, ollamaChat } from './services/ollama';
 import { authMiddleware } from './middleware/auth';
 
 import authRouter from './routes/auth';
@@ -51,25 +50,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 // Health check
 app.get('/health', (_req: Request, res: Response) => res.json({ status: 'ok', ts: new Date().toISOString() }));
-
-// Ollama health + test
-app.get('/api/ai/health', authMiddleware, async (_req: Request, res: Response) => {
-    const running = await isOllamaRunning();
-    res.json({ ollama: running, model: process.env.OLLAMA_MODEL || 'qwen3.5' });
-});
-
-app.post('/api/ai/test', authMiddleware, async (req: Request, res: Response) => {
-    req.setTimeout(300000); // 5 min timeout for LLM calls
-    res.setTimeout(300000);
-    try {
-        const { prompt } = req.body;
-        if (!prompt) return res.status(400).json({ error: 'prompt required' });
-        const result = await ollamaChat(prompt);
-        res.json({ result });
-    } catch (err: any) {
-        res.status(500).json({ error: err.message });
-    }
-});
 
 // Routes
 app.use('/api/auth', authRouter);

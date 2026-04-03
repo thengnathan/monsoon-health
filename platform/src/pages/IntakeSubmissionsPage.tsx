@@ -32,6 +32,12 @@ function formatDateTime(iso: string) {
         year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+const STATUS_COLORS: Record<string, string> = {
+    PENDING: 'var(--warning)',
+    CONVERTED: 'var(--success)',
+    ARCHIVED: 'var(--text-tertiary)',
+};
+
 export default function IntakeSubmissionsPage() {
     const [submissions, setSubmissions] = useState<Submission[]>([]);
     const [statusFilter, setStatusFilter] = useState<'PENDING' | 'CONVERTED' | 'ARCHIVED'>('PENDING');
@@ -115,8 +121,8 @@ export default function IntakeSubmissionsPage() {
 
         const Row = ({ label, value }: { label: string; value: unknown }) =>
             value ? (
-                <div style={{ display: 'flex', gap: 8, marginBottom: 6, fontSize: 13 }}>
-                    <span style={{ color: 'var(--text-muted)', minWidth: 160, flexShrink: 0 }}>{label}</span>
+                <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 6, fontSize: 'var(--font-sm)' }}>
+                    <span style={{ color: 'var(--text-tertiary)', minWidth: 150, flexShrink: 0 }}>{label}</span>
                     <span style={{ color: 'var(--text-primary)', wordBreak: 'break-word' }}>
                         {Array.isArray(value) ? (value as string[]).join(', ') : String(value)}
                     </span>
@@ -124,10 +130,10 @@ export default function IntakeSubmissionsPage() {
             ) : null;
 
         const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-            <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
-                              letterSpacing: '0.1em', color: 'var(--accent)', marginBottom: 10,
-                              paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
+            <div style={{ marginBottom: 'var(--space-5)' }}>
+                <div style={{ fontSize: 'var(--font-xs)', fontWeight: 700, textTransform: 'uppercase',
+                              letterSpacing: '0.1em', color: 'var(--accent)', marginBottom: 'var(--space-3)',
+                              paddingBottom: 'var(--space-2)', borderBottom: '1px solid var(--border)' }}>
                     {title}
                 </div>
                 {children}
@@ -135,33 +141,30 @@ export default function IntakeSubmissionsPage() {
         );
 
         return (
-            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-                          display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end',
-                          zIndex: 1000, padding: 16 }}
-                 onClick={e => { if (e.target === e.currentTarget) setSelected(null); }}>
-                <div style={{ background: 'var(--surface)', borderRadius: 16,
-                              border: '1px solid var(--border)', width: '100%', maxWidth: 540,
-                              maxHeight: 'calc(100vh - 32px)', overflowY: 'auto',
-                              boxShadow: '0 16px 40px rgba(0,0,0,0.2)' }}>
+            <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setSelected(null); }}>
+                <div className="modal" style={{ maxWidth: 540, maxHeight: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column' }}>
                     {/* Header */}
-                    <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)',
-                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                  position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 10 }}>
+                    <div style={{ padding: 'var(--space-5) var(--space-6) var(--space-4)', borderBottom: '1px solid var(--border)',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
                         <div>
-                            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>
+                            <div style={{ fontSize: 'var(--font-lg)', fontWeight: 700, color: 'var(--text-primary)' }}>
                                 {selected.first_name} {selected.last_name}
                             </div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                            <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>
                                 Submitted {formatDateTime(selected.submitted_at)}
+                                <span style={{ marginLeft: 'var(--space-2)', display: 'inline-block', fontSize: 10, fontWeight: 600,
+                                               padding: '1px 8px', borderRadius: 10,
+                                               background: 'var(--accent-muted)', color: STATUS_COLORS[selected.status] }}>
+                                    {selected.status}
+                                </span>
                             </div>
                         </div>
-                        <button onClick={() => setSelected(null)}
-                                style={{ background: 'none', border: 'none', fontSize: 20,
-                                         color: 'var(--text-muted)', cursor: 'pointer' }}>×</button>
+                        <button onClick={() => setSelected(null)} className="btn btn-sm btn-ghost"
+                                style={{ fontSize: 18, padding: '2px 8px' }}>×</button>
                     </div>
 
                     {/* Body */}
-                    <div style={{ padding: '20px 24px' }}>
+                    <div style={{ padding: 'var(--space-5) var(--space-6)', overflowY: 'auto', flex: 1 }}>
                         <Section title="About">
                             <Row label="Date of Birth" value={about.dob ? formatDate(about.dob as string) : null} />
                             <Row label="Biological Sex" value={about.biological_sex} />
@@ -214,34 +217,22 @@ export default function IntakeSubmissionsPage() {
 
                     {/* Actions */}
                     {selected.status === 'PENDING' && (
-                        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)',
-                                      display: 'flex', gap: 10, position: 'sticky', bottom: 0,
-                                      background: 'var(--surface)' }}>
-                            <button onClick={handleConvert} disabled={converting}
-                                    style={{ flex: 2, padding: '12px 16px', background: 'var(--accent)',
-                                             border: 'none', borderRadius: 10, color: 'white',
-                                             fontSize: 14, fontWeight: 600, cursor: 'pointer',
-                                             opacity: converting ? 0.7 : 1, fontFamily: 'inherit' }}>
+                        <div style={{ padding: 'var(--space-4) var(--space-6)', borderTop: '1px solid var(--border)',
+                                      display: 'flex', gap: 'var(--space-3)', flexShrink: 0 }}>
+                            <button className="btn btn-primary" onClick={handleConvert} disabled={converting}
+                                    style={{ flex: 2 }}>
                                 {converting ? 'Creating…' : '+ Create Patient'}
                             </button>
-                            <button onClick={() => handleArchive(selected.id)} disabled={archiving}
-                                    style={{ flex: 1, padding: '12px 16px',
-                                             background: 'var(--surface-2)',
-                                             border: '1px solid var(--border)', borderRadius: 10,
-                                             color: 'var(--text-muted)', fontSize: 14, fontWeight: 600,
-                                             cursor: 'pointer', fontFamily: 'inherit' }}>
+                            <button className="btn btn-secondary" onClick={() => handleArchive(selected.id)} disabled={archiving}
+                                    style={{ flex: 1 }}>
                                 Archive
                             </button>
                         </div>
                     )}
                     {selected.status === 'CONVERTED' && (
-                        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)' }}>
-                            <button onClick={() => navigate(`/patients/${selected.patient_id}`)}
-                                    style={{ width: '100%', padding: '12px 16px',
-                                             background: 'var(--surface-2)',
-                                             border: '1px solid var(--border)', borderRadius: 10,
-                                             color: 'var(--accent)', fontSize: 14, fontWeight: 600,
-                                             cursor: 'pointer', fontFamily: 'inherit' }}>
+                        <div style={{ padding: 'var(--space-4) var(--space-6)', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+                            <button className="btn btn-secondary" onClick={() => navigate(`/patients/${selected.patient_id}`)}
+                                    style={{ width: '100%' }}>
                                 View Patient →
                             </button>
                         </div>
@@ -254,48 +245,37 @@ export default function IntakeSubmissionsPage() {
     // ── Main render ────────────────────────────────────────────────────────────
 
     return (
-        <div className="page-content">
-            <div className="page-header">
+        <>
+            <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                 <div>
-                    <h1 className="page-title">Intake Submissions</h1>
-                    <p className="page-subtitle">
-                        Patient intake forms submitted via your intake link
-                    </p>
+                    <h1>Intake Submissions</h1>
+                    <p>Patient intake forms submitted via your intake link</p>
                 </div>
-                <button onClick={copyLink} className="btn btn-secondary" style={{ gap: 8 }}>
+                <button onClick={copyLink} className="btn btn-secondary">
                     Copy Intake Link
                 </button>
             </div>
 
             {/* Intake link display */}
-            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)',
-                          borderRadius: 12, padding: '14px 16px', marginBottom: 20,
-                          display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>Patient link:</span>
-                <code style={{ flex: 1, fontSize: 12, color: 'var(--accent)',
-                               background: 'var(--surface-2)', padding: '4px 8px',
-                               borderRadius: 6, overflow: 'hidden', textOverflow: 'ellipsis',
+            <div className="card" style={{ padding: 'var(--space-3) var(--space-4)', marginBottom: 'var(--space-5)',
+                          display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', flexShrink: 0 }}>Patient link:</span>
+                <code style={{ flex: 1, fontSize: 'var(--font-xs)', color: 'var(--accent)',
+                               background: 'var(--bg-secondary)', padding: '4px 8px',
+                               borderRadius: 'var(--radius-sm)', overflow: 'hidden', textOverflow: 'ellipsis',
                                whiteSpace: 'nowrap' as const }}>
                     {intakeUrl}
                 </code>
-                <button onClick={copyLink}
-                        style={{ background: 'none', border: '1px solid var(--border)',
-                                 borderRadius: 8, padding: '4px 10px', fontSize: 12,
-                                 color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit',
-                                 flexShrink: 0 }}>
+                <button onClick={copyLink} className="btn btn-sm btn-ghost"
+                        style={{ flexShrink: 0 }}>
                     Copy
                 </button>
             </div>
 
             {/* Status tabs */}
-            <div style={{ display: 'flex', gap: 4, marginBottom: 20 }}>
+            <div className="filters" style={{ marginBottom: 'var(--space-5)' }}>
                 {(['PENDING', 'CONVERTED', 'ARCHIVED'] as const).map(s => (
-                    <button key={s} onClick={() => setStatusFilter(s)}
-                            style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                                     border: '1px solid var(--border)', cursor: 'pointer',
-                                     fontFamily: 'inherit',
-                                     background: statusFilter === s ? 'var(--accent)' : 'var(--surface)',
-                                     color: statusFilter === s ? 'white' : 'var(--text-muted)' }}>
+                    <button key={s} className={`filter-pill ${statusFilter === s ? 'active' : ''}`} onClick={() => setStatusFilter(s)}>
                         {s.charAt(0) + s.slice(1).toLowerCase()}
                     </button>
                 ))}
@@ -305,17 +285,20 @@ export default function IntakeSubmissionsPage() {
             {loading ? (
                 <div className="loading-spinner"><div className="spinner" /></div>
             ) : submissions.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
-                    <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
-                    <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>No {statusFilter.toLowerCase()} submissions</div>
+                <div className="card" style={{ textAlign: 'center', padding: 'var(--space-12) var(--space-6)',
+                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-3)' }}>
+                    <div style={{ fontSize: 36, opacity: 0.35 }}>📋</div>
+                    <div style={{ fontSize: 'var(--font-base)', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        No {statusFilter.toLowerCase()} submissions
+                    </div>
                     {statusFilter === 'PENDING' && (
-                        <div style={{ fontSize: 13 }}>
+                        <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', maxWidth: 320, margin: 0 }}>
                             Send the intake link to patients and their completed forms will appear here.
-                        </div>
+                        </p>
                     )}
                 </div>
             ) : (
-                <div className="table-container">
+                <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
                     <table className="data-table">
                         <thead>
                             <tr>
@@ -331,17 +314,17 @@ export default function IntakeSubmissionsPage() {
                             {submissions.map(sub => (
                                 <tr key={sub.id} onClick={() => openDetail(sub.id)}
                                     style={{ cursor: 'pointer' }}>
-                                    <td style={{ fontWeight: 600 }}>
-                                        {sub.first_name} {sub.last_name}
+                                    <td className="patient-name">
+                                        {sub.last_name}, {sub.first_name}
                                     </td>
-                                    <td>{sub.dob ? formatDate(sub.dob) : '—'}</td>
-                                    <td>{sub.phone || '—'}</td>
-                                    <td style={{ color: 'var(--text-muted)' }}>{sub.email || '—'}</td>
-                                    <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                                    <td className="meta">{sub.dob ? formatDate(sub.dob) : '—'}</td>
+                                    <td className="meta">{sub.phone || '—'}</td>
+                                    <td className="meta">{sub.email || '—'}</td>
+                                    <td className="meta">
                                         {formatDateTime(sub.submitted_at)}
                                     </td>
                                     <td>
-                                        <span style={{ fontSize: 12, color: 'var(--accent)',
+                                        <span style={{ fontSize: 'var(--font-xs)', color: 'var(--accent)',
                                                         fontWeight: 600 }}>View →</span>
                                     </td>
                                 </tr>
@@ -352,6 +335,6 @@ export default function IntakeSubmissionsPage() {
             )}
 
             {renderDetail()}
-        </div>
+        </>
     );
 }

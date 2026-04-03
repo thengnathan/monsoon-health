@@ -4,7 +4,7 @@ import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDate } from '../utils';
-import type { Patient, ReferralSource, UploadResult, BatchImportResult } from '../types';
+import type { Patient, ReferralSource, UploadResult, BatchImportResult, PatientClinicalData } from '../types';
 
 interface PatientForm {
     first_name: string;
@@ -20,6 +20,8 @@ export default function PatientsPage() {
     const [patients, setPatients] = useState<Patient[]>([]);
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
+    const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [summaries, setSummaries] = useState<Record<string, PatientClinicalData | null>>({});
     const [showModal, setShowModal] = useState(false);
     const [showUploadTypeModal, setShowUploadTypeModal] = useState(false);
     const [showUploadResult, setShowUploadResult] = useState<UploadResult | null>(null);
@@ -89,6 +91,19 @@ export default function PatientsPage() {
         }
         setUploading(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const handleRowExpand = (patientId: string) => {
+        if (expandedId === patientId) {
+            setExpandedId(null);
+            return;
+        }
+        setExpandedId(patientId);
+        if (!(patientId in summaries)) {
+            api.getPatientClinicalData(patientId)
+                .then(d => setSummaries(prev => ({ ...prev, [patientId]: d })))
+                .catch(() => setSummaries(prev => ({ ...prev, [patientId]: null })));
+        }
     };
 
     const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -176,15 +191,91 @@ export default function PatientsPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {patients.map(p => (
-                                <tr key={p.id} onClick={() => navigate(`/patients/${p.id}`)}>
-                                    <td className="patient-name">{p.last_name}, {p.first_name}</td>
-                                    <td>{formatDate(p.dob)}</td>
-                                    <td className="meta">{p.internal_identifier || '—'}</td>
-                                    <td className="meta">{p.referral_source_name || '—'}</td>
-                                    <td className="meta">{formatDate(p.created_at)}</td>
-                                </tr>
-                            ))}
+                            {patients.map(p => {
+                                const isExpanded = expandedId === p.id;
+                                const cd = summaries[p.id];
+                                return [
+                                    <tr
+                                        key={p.id}
+                                        onClick={() => handleRowExpand(p.id)}
+                                        style={{ cursor: 'pointer', background: isExpanded ? 'var(--bg-secondary)' : undefined }}
+                                    >
+                                        <td className="patient-name" onClick={e => { e.stopPropagation(); navigate(`/patients/${p.id}`); }} style={{ color: 'var(--accent)', cursor: 'pointer' }}>
+                                            {p.last_name}, {p.first_name}
+                                        </td>
+                                        <td>{formatDate(p.dob)}</td>
+                                        <td className="meta">{p.internal_identifier || '—'}</td>
+                                        <td className="meta">{p.referral_source_name || '—'}</td>
+                                        <td className="meta" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                            {formatDate(p.created_at)}
+                                            <span style={{ color: 'var(--text-tertiary)', fontSize: 10, marginLeft: 8 }}>{isExpanded ? '▲' : '▼'}</span>
+                                        </td>
+                                    </tr>,
+                                    isExpanded && (
+                                        <tr key={`${p.id}-expand`} style={{ background: 'var(--bg-secondary)' }}>
+                                            <td colSpan={5} style={{ padding: 'var(--space-3) var(--space-4)', borderTop: '1px solid var(--border)' }}>
+                                                {!(p.id in summaries) ? (
+                                                    <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>Loading…</div>
+                                                ) : !cd ? (
+                                                    <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>
+                                                        No clinical data extracted yet.{' '}
+                                                        <span style={{ color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/patients/${p.id}`)}>Open profile to upload a document.</span>
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
+                                                        {cd.diagnoses.length > 0 && (
+                                                            <div>
+                                                                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Diagnoses</div>
+                                                                {cd.diagnoses.filter(d => d.status !== 'resolved').slice(0, 4).map((d, i) => (
+                                                                    <div key={i} style={{ fontSize: 'var(--font-sm)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                                                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: d.status === 'active' ? '#28a745' : '#ffc107', flexShrink: 0 }} />
+                                                                        {d.name}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        {Object.keys(cd.labs_latest).length > 0 && (
+                                                            <div>
+                                                                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Latest Labs</div>
+                                                                {Object.entries(cd.labs_latest).slice(0, 4).map(([name, lab]) => (
+                                                                    <div key={name} style={{ fontSize: 'var(--font-sm)', display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                                                                        <span style={{ color: 'var(--text-secondary)' }}>{name}</span>
+                                                                        <span style={{ fontWeight: 600 }}>{lab.value} <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', fontSize: 11 }}>{lab.unit}</span></span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        {Object.keys(cd.imaging_latest).length > 0 && (
+                                                            <div>
+                                                                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Imaging</div>
+                                                                {Object.entries(cd.imaging_latest).map(([type, img]) => (
+                                                                    <div key={type} style={{ fontSize: 'var(--font-sm)', display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                                                                        <span style={{ color: 'var(--text-secondary)' }}>{type}</span>
+                                                                        <span style={{ fontWeight: 600 }}>{img.value !== undefined ? `${img.value} ${img.unit || ''}` : '—'}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        {cd.medications.length > 0 && (
+                                                            <div>
+                                                                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Medications</div>
+                                                                {cd.medications.slice(0, 4).map((m, i) => (
+                                                                    <div key={i} style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', marginBottom: 2 }}>{m.name}{m.dose ? ` ${m.dose}` : ''}</div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                                                            <button className="btn btn-sm btn-primary" onClick={() => navigate(`/patients/${p.id}`)}>
+                                                                View Full Profile →
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    )
+                                ].filter(Boolean);
+                            })}
                         </tbody>
                     </table>
                 </div>

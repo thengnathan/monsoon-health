@@ -138,8 +138,8 @@ router.get('/:id', async (req: Request, res: Response) => {
                   FROM patient_signals ps JOIN signal_types st ON ps.signal_type_id = st.id
                   WHERE ps.patient_id = $1 AND ps.site_id = $2 ORDER BY ps.collected_at DESC`,
                  [sc.patient_id, req.user.site_id]),
-        db.query(`SELECT tsr.*, st.name as signal_name, st.label as signal_label, st.unit
-                  FROM trial_signal_rules tsr JOIN signal_types st ON tsr.signal_type_id = st.id
+        db.query(`SELECT tsr.*, st.name as signal_name, COALESCE(st.label, tsr.signal_label) as signal_label, COALESCE(st.unit, '') as unit
+                  FROM trial_signal_rules tsr LEFT JOIN signal_types st ON tsr.signal_type_id = st.id
                   WHERE tsr.trial_id = $1 AND tsr.is_active = true`,
                  [sc.trial_id]),
     ]);

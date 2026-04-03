@@ -11,7 +11,7 @@
     --lp-accent-hover: #a4d0eb;
     --lp-bg-dark: #0a141e;
     --lp-bg-section: #0d1a26;
-    --lp-text: #F2F0EF;
+    --lp-text: #DFDFDF;
     --lp-text-muted: #8fa8be;
     --lp-card-bg: rgba(18, 32, 46, 0.7);
     --lp-border: rgba(136, 189, 223, 0.1);
@@ -76,7 +76,7 @@
 }
 
 .landing-nav-signin {
-    color: rgba(255, 255, 255, 0.55);
+    color: rgba(242, 240, 239, 0.55);
     text-decoration: none;
     font-size: 0.9rem;
     font-weight: 500;
@@ -87,12 +87,12 @@
 }
 
 .landing-nav-signin:hover {
-    color: rgba(255, 255, 255, 0.9);
+    color: #DFDFDF;
     background: rgba(255, 255, 255, 0.06);
 }
 
 .landing-nav-links a {
-    color: #ffffff;
+    color: #DFDFDF;
     text-decoration: none;
     font-size: 0.9rem;
     font-weight: 500;
@@ -107,7 +107,7 @@
 .landing-nav-link {
     background: none;
     border: none;
-    color: rgba(255, 255, 255, 0.85);
+    color: rgba(242, 240, 239, 0.85);
     font-family: inherit;
     font-size: 1rem;
     font-weight: 500;
@@ -204,7 +204,7 @@
 .landing-dropdown-coming-soon {
     font-size: 0.7rem;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(242, 240, 239, 0.5);
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 4px;
@@ -217,7 +217,7 @@
 .landing-nav-cta {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.12);
-    color: rgba(255, 255, 255, 0.85);
+    color: rgba(242, 240, 239, 0.85);
     padding: 0.5rem 1.4rem;
     border-radius: 8px;
     font-family: inherit;
@@ -293,7 +293,7 @@
 
 .landing-hero-sub {
     font-size: 1.5rem;
-    color: #F2F0EF;
+    color: #DFDFDF;
     margin: 1.5rem auto 2.5rem;
     line-height: 1.7;
     font-weight: 500;
@@ -408,7 +408,7 @@
     font-size: clamp(3rem, 8vw, 6.5rem);
     font-weight: 700;
     letter-spacing: 0.04em;
-    color: #F2F0EF;
+    color: #DFDFDF;
     text-transform: uppercase;
     line-height: 1.1;
 }
@@ -427,7 +427,7 @@
     left: 0;
     right: 0;
     overflow: hidden;
-    color: #F2F0EF;
+    color: #DFDFDF;
     font-size: inherit;
     font-weight: inherit;
     letter-spacing: inherit;
@@ -636,7 +636,7 @@
     justify-content: center;
     overflow: hidden;
     background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.9);
+    color: #DFDFDF;
     border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 0.85rem 2.2rem;
     border-radius: 10px;
@@ -709,7 +709,7 @@
 /* ── Buttons ──────────────────────────────────────────────── */
 .landing-btn-primary {
     background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.9);
+    color: #DFDFDF;
     border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 0.85rem 2.2rem;
     border-radius: 10px;
@@ -1051,7 +1051,7 @@
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
     font-size: clamp(2rem, 3.5vw, 3rem);
     font-weight: 700;
-    color: #F2F0EF;
+    color: #DFDFDF;
     line-height: 1.25;
     letter-spacing: -0.01em;
 }
@@ -1065,7 +1065,7 @@
 .editorial-body p {
     font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
     font-size: 1.15rem;
-    color: #F2F0EF;
+    color: #DFDFDF;
     line-height: 1.75;
     max-width: 600px;
 }
@@ -1078,7 +1078,7 @@
 .editorial-mission p {
     font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
     font-size: 1.1rem;
-    color: #F2F0EF;
+    color: #DFDFDF;
     line-height: 1.8;
     max-width: 600px;
     font-style: italic;
@@ -1087,7 +1087,7 @@
 .editorial-tagline {
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
     font-size: clamp(1.2rem, 2vw, 1.5rem);
-    color: #F2F0EF;
+    color: #DFDFDF;
     line-height: 1.5;
     font-weight: 600;
     letter-spacing: 0.01em;
@@ -1244,7 +1244,7 @@
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
     font-size: clamp(2.5rem, 5vw, 4rem);
     font-weight: 700;
-    color: #F2F0EF;
+    color: #DFDFDF;
     letter-spacing: -0.02em;
     margin-bottom: 0.75rem;
 }
@@ -1322,7 +1322,7 @@
     flex-direction: column;
     align-items: center;
     gap: 0.3rem;
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(242, 240, 239, 0.5);
     opacity: 1;
     transition: opacity 0.4s ease;
     z-index: 10;
@@ -1520,7 +1520,7 @@
     font-weight: 600;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.6);
+    color: rgba(242, 240, 239, 0.6);
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 20px;
@@ -1531,7 +1531,7 @@
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
     font-size: clamp(3.5rem, 8vw, 6rem);
     font-weight: 700;
-    color: #F2F0EF;
+    color: #DFDFDF;
     letter-spacing: 0.04em;
     line-height: 1;
     margin: 0;
@@ -1540,7 +1540,7 @@
 
 .product-hero-sub {
     font-size: 1.2rem;
-    color: rgba(255, 255, 255, 0.65);
+    color: rgba(242, 240, 239, 0.65);
     font-weight: 400;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -1627,7 +1627,7 @@
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
     font-size: clamp(2rem, 4vw, 3rem);
     font-weight: 700;
-    color: #F2F0EF;
+    color: #DFDFDF;
     letter-spacing: -0.01em;
     margin-bottom: 0.6rem;
     padding-left: 2%;
@@ -1689,7 +1689,7 @@
 .founder-name {
     font-size: 1.25rem;
     font-weight: 700;
-    color: #F2F0EF;
+    color: #DFDFDF;
     letter-spacing: -0.01em;
 }
 
@@ -1762,7 +1762,7 @@
     font-family: 'Friz Quadrata Std', 'Georgia', serif;
     font-size: clamp(2.8rem, 5vw, 4.5rem);
     font-weight: 700;
-    color: #F2F0EF;
+    color: #DFDFDF;
     letter-spacing: -0.02em;
     line-height: 1.1;
     margin: 0;
@@ -1770,7 +1770,7 @@
 
 .contact-subtitle {
     font-size: 1.1rem;
-    color: rgba(255, 255, 255, 0.9);
+    color: #DFDFDF;
     line-height: 1.75;
     max-width: 420px;
     margin: 0;
@@ -1811,7 +1811,7 @@
 .contact-form-title {
     font-size: 1.4rem;
     font-weight: 600;
-    color: #F2F0EF;
+    color: #DFDFDF;
     margin: 0 0 1.75rem;
     letter-spacing: -0.02em;
 }
@@ -1837,7 +1837,7 @@
 .contact-form-label {
     font-size: 0.8rem;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.9);
+    color: #DFDFDF;
     letter-spacing: 0.04em;
     text-transform: uppercase;
 }
@@ -1848,7 +1848,7 @@
     border-radius: 10px;
     padding: 0.75rem 1rem;
     font-size: 0.95rem;
-    color: #ffffff;
+    color: #DFDFDF;
     font-family: inherit;
     outline: none;
     transition: border-color 0.2s, background 0.2s;
@@ -1887,7 +1887,7 @@
 
 .contact-success h3 {
     font-size: 1.4rem;
-    color: #F2F0EF;
+    color: #DFDFDF;
     margin: 0;
 }
 
