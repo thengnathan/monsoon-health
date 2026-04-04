@@ -876,7 +876,7 @@ export default function TrialDetailPage() {
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                                     {trial.signal_rules.map(rule => (
-                                        <div key={rule.id} className="card" style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                                        <div key={rule.id} className="card" style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
                                             <div style={{ flex: 1 }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                                                     <span style={{ fontWeight: 500, fontSize: 'var(--font-base)' }}>{rule.signal_label}</span>
@@ -888,7 +888,7 @@ export default function TrialDetailPage() {
                                                     <div style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--accent)', marginTop: 2 }}>
                                                         {rule.criteria_text}
                                                     </div>
-                                                ) : rule.operator === 'BETWEEN' ? (
+                                                ) : rule.operator === 'BETWEEN' && (rule.min_value != null || rule.max_value != null) ? (
                                                     <div style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--accent)', marginTop: 2 }}>
                                                         {rule.min_value}–{rule.max_value}
                                                         {rule.unit && <span style={{ fontSize: 'var(--font-sm)', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 4 }}>{rule.unit}</span>}
@@ -902,7 +902,7 @@ export default function TrialDetailPage() {
                                                     </div>
                                                 )}
                                             </div>
-                                            <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
+                                            <div style={{ display: 'flex', gap: 'var(--space-1)', flexShrink: 0 }}>
                                                 <button className="btn btn-sm btn-ghost" onClick={() => { setEditingRule(rule); setSignalForm({ mode: rule.source === 'ai_extracted' || !rule.signal_type_id ? 'freeform' : 'catalog', signal_type_id: rule.signal_type_id || '', signal_label: rule.signal_label || '', criteria_text: rule.criteria_text || '', operator: rule.operator, threshold_number: rule.threshold_number?.toString() ?? '', min_value: rule.min_value?.toString() ?? '', max_value: rule.max_value?.toString() ?? '', unit: rule.unit ?? '' }); }} style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-sm)' }}>Edit</button>
                                                 <button className="btn btn-sm btn-ghost" onClick={() => handleDeleteSignal(rule.id)} style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-sm)' }}>✕</button>
                                             </div>

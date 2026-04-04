@@ -1,7 +1,7 @@
-import { claudeChat, claudeExtract } from './claude';
+import { claudeChat, claudeExtract, claudeExtractFromPDF } from './claude';
 import type { StructuredProtocol, StructuredPatientDocument } from '../types/clinicalSchemas';
 
-// ── Text cleaning ─────────────────────────────────────────────────────────────
+// ── Text cleaning (used for patient documents only) ───────────────────────────
 
 export function cleanPdfText(raw: string): string {
     const lines = raw.replace(/\r\n/g, '\n').split('\n');
@@ -25,31 +25,15 @@ export function cleanPdfText(raw: string): string {
     return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-// ── Protocol extraction ───────────────────────────────────────────────────────
+// ── Protocol extraction (native PDF — Claude reads the document directly) ─────
 
-const PROTOCOL_SYSTEM = `You are a clinical trial protocol analyst. Extract structured information from protocol documents. Return ONLY valid JSON, no markdown, no explanation.`;
+const PROTOCOL_SYSTEM = `You are a clinical trial protocol analyst with deep clinical research coordination experience. You extract structured information from protocol documents for use in a clinical trial operations platform.
 
-const PROTOCOL_PROMPT = (text: string) => `Extract information from this clinical trial protocol and return a JSON object.
+Return ONLY valid JSON. No markdown. No explanation. No preamble.`;
 
-For inclusion_criteria and exclusion_criteria: extract each criterion as a complete, clean sentence exactly as written in the protocol. One string per criterion. Do not summarize, combine, or interpret — faithfully reproduce each criterion.
+const PROTOCOL_PROMPT = `Extract all structured information from this clinical trial protocol PDF.
 
-For visit_schedule: write a concise plain-text summary of the study visit schedule (e.g. "Screening (Day -28 to -1), Baseline (Day 1), Week 4, Week 12, Week 24 (EOT), Follow-up (Week 28)"). If no visit schedule is found, return null.
-
-For extracted_visits: extract each study visit as a structured object. Day 1 / Baseline = day_offset 0. Screening visits get negative day_offsets (e.g. a screening window of Day -28 to -1 → day_offset: -14, window_before: 14, window_after: 13). For ±-windowed visits (e.g. "Week 4, ±3 days"), use day_offset: 28, window_before: 3, window_after: 3. If no window is specified, use 0 for both. Include all visits in chronological order.
-
-For extracted_signal_rules: extract 6–10 of the most important measurable screening criteria as structured signal rule objects. These are the criteria a coordinator checks first when evaluating a patient.
-
-Rules for extracted_signal_rules:
-- "criteria_text": the human-readable criterion exactly as it appears (e.g. "FibroScan ≥ 8 kPa", "Age 18–75 years", "Biopsy-proven NASH fibrosis stage 1–4")
-- "signal_label": a short label for the measurement (e.g. "Age", "FibroScan", "HbA1c", "Platelet Count")
-- "operator": one of "GTE" (≥), "LTE" (≤), "EQ" (=), "BETWEEN" (range), or "TEXT_MATCH" (qualitative/non-numeric)
-- For ranges like "Age 18–75": use operator "BETWEEN" with "min_value" and "max_value"
-- For single thresholds like "HbA1c ≤ 9.5%": use operator "LTE" with "threshold_number": 9.5
-- For qualitative criteria like "Biopsy-proven NASH": use operator "TEXT_MATCH" (no numeric fields)
-- "unit": the measurement unit if applicable (e.g. "years", "kPa", "%", "×10⁹/μL")
-- EXCLUDE any criterion whose threshold is relative rather than absolute — i.e. expressed as a multiple of ULN (Upper Limit of Normal), baseline, or any other reference value (e.g. "ALT ≤ 5 × ULN", "AST ≤ 3 × ULN", "creatinine ≤ 1.5 × ULN"). These cannot be evaluated against patient data without knowing the lab's reference range. Only include criteria with fixed, absolute numeric thresholds or qualitative criteria.
-
-Return this exact JSON shape (omit fields not found in the document):
+Return this exact JSON:
 {
   "title": string,
   "sponsor": string,
@@ -61,43 +45,65 @@ Return this exact JSON shape (omit fields not found in the document):
   "secondary_endpoints": [string],
   "study_duration": string,
   "estimated_enrollment": number | null,
-  "inclusion_criteria": [string],
-  "exclusion_criteria": [string],
-  "visit_schedule": string | null,
-  "extracted_signal_rules": [
-    {
-      "criteria_text": string,
-      "signal_label": string,
-      "operator": "GTE" | "LTE" | "EQ" | "BETWEEN" | "TEXT_MATCH",
-      "threshold_number": number | null,
-      "min_value": number | null,
-      "max_value": number | null,
-      "unit": string | null
-    }
-  ],
   "extracted_visits": [
     {
       "visit_name": string,
+      "visit_label": string | null,
       "day_offset": number,
       "window_before": number,
       "window_after": number,
+      "is_screening": boolean,
+      "is_randomization": boolean,
       "notes": string | null
+    }
+  ],
+  "inclusion_criteria": [string],
+  "exclusion_criteria": [string],
+  "extracted_signal_rules": [
+    {
+      "field": string,
+      "label": string,
+      "unit": string | null,
+      "operator": "GTE" | "LTE" | "EQ" | "BETWEEN" | "TEXT_MATCH",
+      "value": number | null,
+      "value_min": number | null,
+      "value_max": number | null,
+      "value_text": string | null,
+      "source_criterion": string
     }
   ]
 }
 
-PROTOCOL TEXT:
-${text}`;
+Rules for extracted_visits:
+- Find the Schedule of Assessments or Visit Schedule table — read it carefully
+- Day 1 / first dose / randomization = day_offset 0; screening visits = negative offsets
+- window_before/window_after in days (e.g. "Week 4 ±3 days" → day_offset:28, window_before:3, window_after:3)
+- Skip unscheduled / as-needed / early termination visits (no fixed day)
+- Set is_screening and is_randomization flags correctly
 
-export async function extractProtocol(text: string): Promise<StructuredProtocol> {
-    const cleaned = cleanPdfText(text);
+Rules for inclusion_criteria and exclusion_criteria:
+- Extract ALL criteria for ALL cohorts and study parts
+- Each string is ONE atomic criterion
+- If sub-criteria are grouped under a parent (e.g. "Lab tests: a. Albumin ≥ 3.5 g/dL, b. eGFR ≥ 45"), split into separate entries prepending the parent context
+- Preserve original thresholds, units, and qualifiers verbatim
+- One measurable condition = one array element
+
+Rules for extracted_signal_rules (up to 6 rules):
+- Pick the most clinically important criteria that could disqualify or qualify patients
+- Include disease-specific imaging and biomarker criteria (e.g. FibroScan/LSM kPa, ELF score) — not just standard labs
+- Include key disease-specific binary/categorical requirements as TEXT_MATCH (e.g. biopsy-proven diagnosis with required fibrosis stage) — use value_text to capture the exact requirement
+- EXCLUDE relative thresholds (× ULN, × baseline) — these are unmeasurable without a local lab reference
+- BETWEEN operator: use value_min + value_max; TEXT_MATCH: use value_text`;
+
+export async function extractProtocol(pdfBuffer: Buffer): Promise<StructuredProtocol> {
+    console.log('[Extraction] Starting native PDF extraction...');
     try {
-        console.log('[Extraction] Extracting protocol structured data...');
-        const result = await claudeExtract<StructuredProtocol>(
-            PROTOCOL_PROMPT(cleaned),
+        const result = await claudeExtractFromPDF<StructuredProtocol>(
+            pdfBuffer,
+            PROTOCOL_PROMPT,
             PROTOCOL_SYSTEM,
         );
-        console.log(`[Extraction] Protocol extraction complete — ${result.inclusion_criteria?.length ?? 0} inclusion, ${result.exclusion_criteria?.length ?? 0} exclusion criteria`);
+        console.log(`[Extraction] Complete — ${result.inclusion_criteria?.length ?? 0} inclusion, ${result.exclusion_criteria?.length ?? 0} exclusion, ${result.extracted_visits?.length ?? 0} visits, ${result.extracted_signal_rules?.length ?? 0} signal rules`);
         return {
             ...result,
             inclusion_criteria: result.inclusion_criteria ?? [],

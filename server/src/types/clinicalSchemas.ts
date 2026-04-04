@@ -6,20 +6,25 @@
 // ── Protocol ─────────────────────────────────────────────────────────────────
 
 export interface ExtractedSignalRule {
-    criteria_text: string;               // human-readable (e.g. "Age 18–75 years")
-    signal_label: string;                // short label (e.g. "Age")
+    field?: string;                      // machine-readable identifier (e.g. "platelet_count")
+    label: string;                       // short display label (e.g. "Platelet Count")
+    unit?: string;                       // measurement unit (e.g. "/μL", "years", "%")
     operator: 'GTE' | 'LTE' | 'EQ' | 'BETWEEN' | 'TEXT_MATCH';
-    threshold_number?: number;           // single threshold (for GTE/LTE/EQ)
-    min_value?: number;                  // range lower bound (for BETWEEN)
-    max_value?: number;                  // range upper bound (for BETWEEN)
-    unit?: string;
+    value?: number;                      // single threshold (GTE/LTE/EQ)
+    value_min?: number;                  // range lower bound (BETWEEN)
+    value_max?: number;                  // range upper bound (BETWEEN)
+    value_text?: string;                 // qualitative value (TEXT_MATCH)
+    source_criterion?: string;           // verbatim criterion text from protocol
 }
 
 export interface ExtractedVisit {
     visit_name: string;                  // e.g. "Screening", "Baseline", "Week 4"
-    day_offset: number;                  // days from baseline (Day 1 = 0; screening is negative)
-    window_before?: number;              // allowed days before target (e.g. 3 for ±3)
+    visit_label?: string;                // short label e.g. "V1", "V2"
+    day_offset: number;                  // days from Day 1 (negative = pre-baseline)
+    window_before?: number;              // allowed days before target
     window_after?: number;               // allowed days after target
+    is_screening?: boolean;
+    is_randomization?: boolean;
     notes?: string;
 }
 

@@ -1,9 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
-import pdfParse from 'pdf-parse';
 import { authMiddleware, requireRole, auditLog } from '../middleware/auth';
-import { extractProtocol, cleanPdfText } from '../services/aiIngestion';
+import { extractProtocol } from '../services/aiIngestion';
 import { runProtocolMatching } from '../services/patientMatching';
 import type { ExtractedSignalRule, ExtractedVisit } from '../types/clinicalSchemas';
 
@@ -20,25 +19,30 @@ async function insertExtractedRules(
 
     for (const rule of rules) {
         const id = uuidv4();
-        // Try to match signal_label to an existing signal_type
+        const label = rule.label;
+        // Try to match label to an existing signal_type
         const match = (await db.query(
             'SELECT id FROM signal_types WHERE site_id = $1 AND label ILIKE $2 LIMIT 1',
-            [siteId, rule.signal_label]
+            [siteId, label]
         )).rows[0];
 
         await db.query(
             `INSERT INTO trial_signal_rules
-             (id, site_id, trial_id, signal_type_id, signal_label, operator, threshold_number, min_value, max_value, criteria_text, source, is_active)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ai_extracted', true)`,
+             (id, site_id, trial_id, signal_type_id, signal_label, field, operator,
+              threshold_number, min_value, max_value, threshold_text, criteria_text,
+              source, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'ai_extracted', true)`,
             [
                 id, siteId, trialId,
                 match ? (match as { id: string }).id : null,
-                rule.signal_label,
+                label,
+                rule.field ?? null,
                 rule.operator || 'TEXT_MATCH',
-                rule.threshold_number ?? null,
-                rule.min_value ?? null,
-                rule.max_value ?? null,
-                rule.criteria_text,
+                rule.value ?? null,
+                rule.value_min ?? null,
+                rule.value_max ?? null,
+                rule.value_text ?? null,
+                rule.source_criterion ?? null,
             ]
         );
     }
@@ -63,17 +67,21 @@ async function insertExtractedVisits(
         const id = uuidv4();
         await db.query(
             `INSERT INTO visit_templates
-             (id, site_id, trial_id, visit_name, day_offset, window_before, window_after, reminder_days_before, notes, sort_order, source)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ai_extracted')`,
+             (id, site_id, trial_id, visit_name, visit_label, day_offset, window_before, window_after,
+              reminder_days_before, notes, sort_order, is_screening, is_randomization, source)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ai_extracted')`,
             [
                 id, siteId, trialId,
                 v.visit_name,
+                v.visit_label ?? null,
                 v.day_offset,
                 v.window_before ?? 0,
                 v.window_after ?? 0,
-                3,                      // default reminder: 3 days before
+                3,
                 v.notes ?? null,
-                i + 1,                  // sort_order 1-based
+                i + 1,
+                v.is_screening ?? false,
+                v.is_randomization ?? false,
             ]
         );
     }
@@ -261,8 +269,7 @@ router.post('/:id/protocol', requireRole('MANAGER', 'CRC'), upload.single('file'
 
         (async () => {
             try {
-                const pdfData = await pdfParse(fileBuffer);
-                const structured = await extractProtocol(pdfData.text);
+                const structured = await extractProtocol(fileBuffer);
                 console.log(`[Protocol] Extracted: ${structured.inclusion_criteria.length} inclusion, ${structured.exclusion_criteria.length} exclusion criteria`);
 
                 // Store structured data on the protocol record
@@ -278,7 +285,8 @@ router.post('/:id/protocol', requireRole('MANAGER', 'CRC'), upload.single('file'
 
                 if (structured.specialty) { updates.push(`specialty = $${++p}`); vals.push(structured.specialty); }
                 if (structured.indication || structured.primary_endpoint) {
-                    updates.push(`description = $${++p}`);
+                    // Only set description if it's not already set — don't overwrite manually entered or previously extracted value
+                    updates.push(`description = COALESCE(NULLIF(description, ''), $${++p})`);
                     vals.push([structured.indication, structured.primary_endpoint].filter(Boolean).join(' — '));
                 }
                 if (structured.inclusion_criteria.length > 0) {
@@ -363,8 +371,7 @@ router.post('/:id/protocol/reextract', requireRole('MANAGER', 'CRC'), async (req
             if (dlError || !fileData) throw dlError ?? new Error('Download returned no data');
 
             const buffer = Buffer.from(await fileData.arrayBuffer());
-            const pdfData = await pdfParse(buffer);
-            const structured = await extractProtocol(pdfData.text);
+            const structured = await extractProtocol(buffer);
             console.log(`[Protocol] Re-extraction complete: ${structured.inclusion_criteria.length} inclusion, ${structured.exclusion_criteria.length} exclusion criteria`);
 
             // Update protocol record's structured_data

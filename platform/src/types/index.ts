@@ -81,18 +81,23 @@ export interface VisitTemplate {
     site_id: string;
     trial_id: string;
     visit_name: string;
+    visit_label: string | null;
     day_offset: number;
     window_before: number;
     window_after: number;
     reminder_days_before: number;
     notes: string | null;
     sort_order: number;
+    is_screening: boolean;
+    is_randomization: boolean;
+    source: string;
 }
 
 export interface SignalRule {
     id: string;
     signal_type_id: string | null;
     signal_label: string;
+    field: string | null;
     operator: string;
     threshold_number: number | null;
     threshold_text: string | null;
