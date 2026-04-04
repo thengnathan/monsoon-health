@@ -5,6 +5,43 @@
 
 // ── Protocol ─────────────────────────────────────────────────────────────────
 
+export interface CriterionSubitem {
+    label: string;
+    text: string;
+    subitems: CriterionSubitem[];
+}
+
+export interface InclusionCriterion {
+    number: number;
+    text: string;
+    subitems: CriterionSubitem[];
+}
+
+export interface ExclusionCategory {
+    category: string | null;
+    note: string | null;
+    criteria: {
+        number: number;
+        text: string;
+        subitems: CriterionSubitem[];
+    }[];
+}
+
+export interface SoaFootnote {
+    key: string;
+    text: string;
+}
+
+export interface VisitAssessmentItem {
+    name: string;
+    footnote_keys: string[];
+}
+
+export interface VisitAssessmentCategory {
+    category: string;
+    items: VisitAssessmentItem[];
+}
+
 export interface ExtractedSignalRule {
     field?: string;                      // machine-readable identifier (e.g. "platelet_count")
     label: string;                       // short display label (e.g. "Platelet Count")
@@ -26,6 +63,7 @@ export interface ExtractedVisit {
     is_screening?: boolean;
     is_randomization?: boolean;
     notes?: string;
+    assessments?: VisitAssessmentCategory[];  // grouped SoA rows for this visit
 }
 
 export interface StructuredProtocol {
@@ -52,6 +90,13 @@ export interface StructuredProtocol {
 
     // Structured signal rules extracted from eligibility criteria
     extracted_signal_rules?: ExtractedSignalRule[];
+
+    // Hierarchical structured criteria for rich UI rendering
+    inclusion_structured?: InclusionCriterion[];
+    exclusion_structured?: ExclusionCategory[];
+
+    // SoA footnote definitions
+    soa_footnotes?: SoaFootnote[];
 
     // @deprecated — use extracted_signal_rules instead (kept for backward compat with old data)
     key_screening_criteria?: string[];

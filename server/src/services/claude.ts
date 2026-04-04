@@ -18,7 +18,7 @@ export async function claudeChat(prompt: string, systemPrompt?: string, model?: 
 
 // Protocol extraction uses Sonnet with streaming + native PDF support
 const EXTRACTION_MODEL = 'claude-sonnet-4-6';
-const EXTRACTION_MAX_TOKENS = 16000;
+const EXTRACTION_MAX_TOKENS = 32000;
 
 function parseJsonFromResponse(raw: string): unknown {
     const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);

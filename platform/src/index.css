@@ -1711,3 +1711,35 @@ button {
 .criteria-html li {
   margin: 0.2rem 0;
 }
+
+/* ── Extraction animation classes ─────────────────────────────────────────── */
+
+@keyframes criterionReveal {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.criterion-reveal {
+  animation: criterionReveal 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes visitSlideIn {
+  from { opacity: 0; transform: translateX(16px) scale(0.97); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+.visit-slide-in {
+  animation: visitSlideIn 350ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes ruleFadeIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.rule-fade-in {
+  animation: ruleFadeIn 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .criterion-reveal, .visit-slide-in, .rule-fade-in {
+    animation: none;
+  }
+}

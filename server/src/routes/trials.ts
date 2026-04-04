@@ -269,53 +269,51 @@ router.post('/:id/protocol', requireRole('MANAGER', 'CRC'), upload.single('file'
 
         (async () => {
             try {
-                const structured = await extractProtocol(fileBuffer);
-                console.log(`[Protocol] Extracted: ${structured.inclusion_criteria.length} inclusion, ${structured.exclusion_criteria.length} exclusion criteria`);
+                const savePartial = async (partial: import('../types/clinicalSchemas').StructuredProtocol) => {
+                    console.log('[Protocol] Saving Call 1 results immediately...');
+                    await db.query(
+                        'UPDATE trial_protocols SET structured_data = $1 WHERE id = $2',
+                        [JSON.stringify(partial), id]
+                    );
+                    const updates: string[] = [];
+                    const vals: unknown[] = [];
+                    let p = 0;
+                    if (partial.specialty) { updates.push(`specialty = $${++p}`); vals.push(partial.specialty); }
+                    if (partial.indication || partial.primary_endpoint) {
+                        updates.push(`description = COALESCE(NULLIF(description, ''), $${++p})`);
+                        vals.push([partial.indication, partial.primary_endpoint].filter(Boolean).join(' — '));
+                    }
+                    if (partial.inclusion_criteria.length > 0) {
+                        updates.push(`inclusion_criteria = $${++p}`);
+                        vals.push(partial.inclusion_criteria.join('\n'));
+                    }
+                    if (partial.exclusion_criteria.length > 0) {
+                        updates.push(`exclusion_criteria = $${++p}`);
+                        vals.push(partial.exclusion_criteria.join('\n'));
+                    }
+                    updates.push(`extracted_criteria_json = $${++p}`);
+                    vals.push(JSON.stringify(partial));
+                    vals.push(trialId, siteId);
+                    await db.query(
+                        `UPDATE trials SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${++p} AND site_id = $${++p}`,
+                        vals
+                    );
+                    if (partial.extracted_signal_rules?.length) {
+                        await insertExtractedRules(db, siteId, trialId, partial.extracted_signal_rules);
+                    }
+                    if (partial.extracted_visits?.length) {
+                        await insertExtractedVisits(db, siteId, trialId, partial.extracted_visits);
+                    }
+                };
 
-                // Store structured data on the protocol record
+                const structured = await extractProtocol(fileBuffer, savePartial);
+                console.log(`[Protocol] Extraction complete — updating with assessments...`);
+
+                // Final save: update structured_data with assessments merged in from Call 2
                 await db.query(
                     'UPDATE trial_protocols SET structured_data = $1 WHERE id = $2',
                     [JSON.stringify(structured), id]
                 );
-
-                // Update trial table fields from extracted data
-                const updates: string[] = [];
-                const vals: unknown[] = [];
-                let p = 0;
-
-                if (structured.specialty) { updates.push(`specialty = $${++p}`); vals.push(structured.specialty); }
-                if (structured.indication || structured.primary_endpoint) {
-                    // Only set description if it's not already set — don't overwrite manually entered or previously extracted value
-                    updates.push(`description = COALESCE(NULLIF(description, ''), $${++p})`);
-                    vals.push([structured.indication, structured.primary_endpoint].filter(Boolean).join(' — '));
-                }
-                if (structured.inclusion_criteria.length > 0) {
-                    updates.push(`inclusion_criteria = $${++p}`);
-                    vals.push(structured.inclusion_criteria.join('\n'));
-                }
-                if (structured.exclusion_criteria.length > 0) {
-                    updates.push(`exclusion_criteria = $${++p}`);
-                    vals.push(structured.exclusion_criteria.join('\n'));
-                }
-                // Store full structured data for patient matching
-                updates.push(`extracted_criteria_json = $${++p}`);
-                vals.push(JSON.stringify(structured));
-
-                vals.push(trialId, siteId);
-                await db.query(
-                    `UPDATE trials SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${++p} AND site_id = $${++p}`,
-                    vals
-                );
-
-                // Insert AI-extracted signal rules
-                if (structured.extracted_signal_rules?.length) {
-                    await insertExtractedRules(db, siteId, trialId, structured.extracted_signal_rules);
-                }
-
-                // Insert AI-extracted visit templates
-                if (structured.extracted_visits?.length) {
-                    await insertExtractedVisits(db, siteId, trialId, structured.extracted_visits);
-                }
 
                 // Run patient matching
                 console.log('[Protocol] Triggering patient matching job...');
@@ -371,52 +369,52 @@ router.post('/:id/protocol/reextract', requireRole('MANAGER', 'CRC'), async (req
             if (dlError || !fileData) throw dlError ?? new Error('Download returned no data');
 
             const buffer = Buffer.from(await fileData.arrayBuffer());
-            const structured = await extractProtocol(buffer);
-            console.log(`[Protocol] Re-extraction complete: ${structured.inclusion_criteria.length} inclusion, ${structured.exclusion_criteria.length} exclusion criteria`);
 
-            // Update protocol record's structured_data
-            await db.query(
-                'UPDATE trial_protocols SET structured_data = $1 WHERE trial_id = $2 AND site_id = $3',
-                [JSON.stringify(structured), trialId, siteId]
-            );
-
-            const updates: string[] = [];
-            const vals: unknown[] = [];
-            let p = 0;
-
-            if (structured.specialty) { updates.push(`specialty = $${++p}`); vals.push(structured.specialty); }
-            if (structured.indication || structured.primary_endpoint) {
-                updates.push(`description = $${++p}`);
-                vals.push([structured.indication, structured.primary_endpoint].filter(Boolean).join(' — '));
-            }
-            if (structured.inclusion_criteria.length > 0) {
-                updates.push(`inclusion_criteria = $${++p}`);
-                vals.push(structured.inclusion_criteria.join('\n'));
-            }
-            if (structured.exclusion_criteria.length > 0) {
-                updates.push(`exclusion_criteria = $${++p}`);
-                vals.push(structured.exclusion_criteria.join('\n'));
-            }
-            updates.push(`extracted_criteria_json = $${++p}`);
-            vals.push(JSON.stringify(structured));
-
-            if (updates.length > 0) {
+            const savePartial = async (partial: import('../types/clinicalSchemas').StructuredProtocol) => {
+                console.log('[Protocol] Saving Call 1 results immediately...');
+                await db.query(
+                    'UPDATE trial_protocols SET structured_data = $1 WHERE trial_id = $2 AND site_id = $3',
+                    [JSON.stringify(partial), trialId, siteId]
+                );
+                const updates: string[] = [];
+                const vals: unknown[] = [];
+                let p = 0;
+                if (partial.specialty) { updates.push(`specialty = $${++p}`); vals.push(partial.specialty); }
+                if (partial.indication || partial.primary_endpoint) {
+                    updates.push(`description = $${++p}`);
+                    vals.push([partial.indication, partial.primary_endpoint].filter(Boolean).join(' — '));
+                }
+                if (partial.inclusion_criteria.length > 0) {
+                    updates.push(`inclusion_criteria = $${++p}`);
+                    vals.push(partial.inclusion_criteria.join('\n'));
+                }
+                if (partial.exclusion_criteria.length > 0) {
+                    updates.push(`exclusion_criteria = $${++p}`);
+                    vals.push(partial.exclusion_criteria.join('\n'));
+                }
+                updates.push(`extracted_criteria_json = $${++p}`);
+                vals.push(JSON.stringify(partial));
                 vals.push(trialId, siteId);
                 await db.query(
                     `UPDATE trials SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${++p} AND site_id = $${++p}`,
                     vals
                 );
-            }
+                if (partial.extracted_signal_rules?.length) {
+                    await insertExtractedRules(db, siteId, trialId, partial.extracted_signal_rules);
+                }
+                if (partial.extracted_visits?.length) {
+                    await insertExtractedVisits(db, siteId, trialId, partial.extracted_visits);
+                }
+            };
 
-            // Insert AI-extracted signal rules
-            if (structured.extracted_signal_rules?.length) {
-                await insertExtractedRules(db, siteId, trialId, structured.extracted_signal_rules);
-            }
+            const structured = await extractProtocol(buffer, savePartial);
+            console.log(`[Protocol] Re-extraction complete — updating with assessments...`);
 
-            // Insert AI-extracted visit templates
-            if (structured.extracted_visits?.length) {
-                await insertExtractedVisits(db, siteId, trialId, structured.extracted_visits);
-            }
+            // Final save: update structured_data with assessments merged in from Call 2
+            await db.query(
+                'UPDATE trial_protocols SET structured_data = $1 WHERE trial_id = $2 AND site_id = $3',
+                [JSON.stringify(structured), trialId, siteId]
+            );
 
             await runProtocolMatching(db, siteId, trialId, userId);
         } catch (err) {

@@ -5,11 +5,8 @@ import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { StatusBadge, formatDate } from '../utils';
 import type { TrialDetail, SignalType, VisitTemplate } from '../types';
+import ProtocolViewer from '../components/ProtocolViewer';
 
-interface CriteriaForm {
-    inclusion_criteria: string;
-    exclusion_criteria: string;
-}
 
 interface VisitForm {
     visit_name: string;
@@ -265,19 +262,137 @@ function RichTextEditor({ value, onChange }: { value: string; onChange: (v: stri
     );
 }
 
+// ── Signal Rule Card ─────────────────────────────────────────────────────────
+
+interface SignalRuleCardProps {
+    chipLabel: string;
+    chipStyle: React.CSSProperties;
+    label: string;
+    field?: string | null;
+    threshold: string;
+    isMatch: boolean;
+    citationText: string | null;
+    isAI: boolean;
+    onEdit: () => void;
+    onDelete: () => void;
+}
+
+function SignalRuleCard({ chipLabel, chipStyle, label, field, threshold, isMatch, citationText, isAI, onEdit, onDelete }: SignalRuleCardProps) {
+    const [citationExpanded, setCitationExpanded] = useState(false);
+
+    return (
+        <div className="card" style={{ padding: 'var(--space-3) var(--space-4)' }}>
+            {/* Top row: chip + label + threshold + badges + actions */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                <span style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    padding: '2px 7px',
+                    borderRadius: 4,
+                    flexShrink: 0,
+                    ...chipStyle,
+                }}>
+                    {chipLabel}
+                </span>
+
+                <span style={{ fontWeight: 600, fontSize: 'var(--font-base)', flex: 1, minWidth: 0 }}>
+                    {label}
+                </span>
+
+                {!isMatch && threshold && (
+                    <span style={{
+                        fontSize: 'var(--font-sm)',
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                        marginLeft: 'auto',
+                        flexShrink: 0,
+                        fontVariantNumeric: 'tabular-nums',
+                    }}>
+                        {threshold}
+                    </span>
+                )}
+
+                {isAI && (
+                    <span style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        padding: '2px 7px',
+                        borderRadius: 10,
+                        background: '#ccfbf1',
+                        color: '#0f766e',
+                        flexShrink: 0,
+                    }}>
+                        AI
+                    </span>
+                )}
+
+                <button
+                    onClick={onEdit}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: '2px 4px', fontSize: 13, lineHeight: 1, flexShrink: 0 }}
+                    title="Edit rule"
+                >
+                    ✎
+                </button>
+                <button
+                    onClick={onDelete}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: '2px 4px', fontSize: 13, lineHeight: 1, flexShrink: 0 }}
+                    title="Delete rule"
+                >
+                    ✕
+                </button>
+            </div>
+
+            {/* Field identifier */}
+            {field && (
+                <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', marginTop: 3 }}>
+                    field: {field}
+                </div>
+            )}
+
+            {/* TEXT_MATCH threshold shown below */}
+            {isMatch && threshold && (
+                <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', marginTop: 4, fontStyle: 'italic' }}>
+                    {threshold}
+                </div>
+            )}
+
+            {/* Citation line */}
+            {citationText && (
+                <div
+                    onClick={() => setCitationExpanded(v => !v)}
+                    style={{
+                        marginTop: 6,
+                        fontSize: 'var(--font-xs)',
+                        color: 'var(--text-tertiary)',
+                        fontStyle: 'italic',
+                        cursor: 'pointer',
+                        overflow: 'hidden',
+                        display: '-webkit-box',
+                        WebkitBoxOrient: 'vertical',
+                        WebkitLineClamp: citationExpanded ? undefined : 1,
+                        lineClamp: citationExpanded ? undefined : 1,
+                    } as React.CSSProperties}
+                    title={citationExpanded ? 'Click to collapse' : 'Click to expand'}
+                >
+                    "{citationText}"
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function TrialDetailPage() {
     const { id } = useParams<{ id: string }>();
     const [trial, setTrial] = useState<TrialDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [showVisitModal, setShowVisitModal] = useState(false);
     const [showSignalModal, setShowSignalModal] = useState(false);
-    const [editingCriteria, setEditingCriteria] = useState(false);
-    const [criteriaForm, setCriteriaForm] = useState<CriteriaForm>({ inclusion_criteria: '', exclusion_criteria: '' });
     const [reextracting, setReextracting] = useState(false);
-    const [extracting, setExtracting] = useState(false);
+    const [extractionPhase, setExtractionPhase] = useState<'idle' | 'waiting' | 'animating'>('idle');
     const extractionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const [inclusionCollapsed, setInclusionCollapsed] = useState(true);
-    const [exclusionCollapsed, setExclusionCollapsed] = useState(true);
+    const animationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+    const preExtractionBackupRef = useRef<TrialDetail | null>(null);
     const [caseTab, setCaseTab] = useState<'potential' | 'screening' | 'enrolled'>('screening');
     const [selectedVisit, setSelectedVisit] = useState<VisitTemplate | null>(null);
     const [visitNotes, setVisitNotes] = useState('');
@@ -291,37 +406,80 @@ export default function TrialDetailPage() {
         if (!id) return;
         api.getTrial(id).then(data => {
             setTrial(data);
-            setCriteriaForm({ inclusion_criteria: data.inclusion_criteria || '', exclusion_criteria: data.exclusion_criteria || '' });
         }).catch(console.error).finally(() => setLoading(false));
+    };
+
+    // Clear any running animation timers
+    const clearAnimationTimers = () => {
+        animationTimersRef.current.forEach(t => clearTimeout(t));
+        animationTimersRef.current = [];
+    };
+
+    // Kick off sequential animation: criteria → visits → rules, then back to idle
+    const startSequentialAnimation = (data: TrialDetail) => {
+        clearAnimationTimers();
+        const criteriaCount =
+            (data.protocol?.structured_data?.inclusion_criteria?.length ?? 0) +
+            (data.protocol?.structured_data?.exclusion_criteria?.length ?? 0);
+        const visitsCount = data.visit_templates?.length ?? 0;
+        const rulesCount = data.signal_rules?.length ?? 0;
+
+        // Criteria animate immediately (60ms stagger + 300ms animation duration)
+        const criteriaEndMs = criteriaCount * 60 + 300;
+        // Visits start 200ms after criteria finish
+        const visitsEndMs = criteriaEndMs + 200 + visitsCount * 100 + 350;
+        // Rules start 200ms after visits finish
+        const rulesEndMs = visitsEndMs + 200 + rulesCount * 100 + 280;
+        // Return to idle 200ms after last rule finishes
+        const idleMs = rulesEndMs + 200;
+
+        const t = setTimeout(() => {
+            setExtractionPhase('idle');
+            preExtractionBackupRef.current = null;
+            clearAnimationTimers();
+        }, Math.max(idleMs, 1500)); // minimum 1.5s so it's always visible
+        animationTimersRef.current.push(t);
     };
 
     // Poll after extraction starts; stop when data arrives or after ~45s
     const startExtractionPoll = () => {
-        // Auto-expand criteria panels so skeletons are visible
-        setInclusionCollapsed(false);
-        setExclusionCollapsed(false);
         if (extractionPollRef.current) clearInterval(extractionPollRef.current);
-        setExtracting(true);
+        setExtractionPhase('waiting');
         let attempts = 0;
         extractionPollRef.current = setInterval(async () => {
             attempts++;
             try {
                 const data = await api.getTrial(id!);
-                setTrial(data);
-                setCriteriaForm({ inclusion_criteria: data.inclusion_criteria || '', exclusion_criteria: data.exclusion_criteria || '' });
                 const hasData =
                     (data.visit_templates?.length > 0) ||
                     (data.signal_rules?.length > 0) ||
                     (data.protocol?.structured_data?.inclusion_criteria?.length ?? 0) > 0;
-                if (hasData || attempts >= 15) {
+                if (hasData) {
                     clearInterval(extractionPollRef.current!);
-                    setExtracting(false);
+                    setTrial(data);
                     setReextracting(false);
+                    setExtractionPhase('animating');
+                    startSequentialAnimation(data);
+                } else if (attempts >= 15) {
+                    clearInterval(extractionPollRef.current!);
+                    setReextracting(false);
+                    // Restore backup on timeout
+                    if (preExtractionBackupRef.current) {
+                        setTrial(preExtractionBackupRef.current);
+                        addToast('Extraction timed out — previous data restored', 'error');
+                    }
+                    setExtractionPhase('idle');
+                    preExtractionBackupRef.current = null;
                 }
             } catch {
                 clearInterval(extractionPollRef.current!);
-                setExtracting(false);
                 setReextracting(false);
+                if (preExtractionBackupRef.current) {
+                    setTrial(preExtractionBackupRef.current);
+                    addToast('Extraction failed — previous data restored', 'error');
+                }
+                setExtractionPhase('idle');
+                preExtractionBackupRef.current = null;
             }
         }, 3000);
     };
@@ -329,7 +487,10 @@ export default function TrialDetailPage() {
     useEffect(() => {
         loadTrial();
         api.getSignalTypes().then(setSignalTypes).catch(() => {});
-        return () => { if (extractionPollRef.current) clearInterval(extractionPollRef.current); };
+        return () => {
+            if (extractionPollRef.current) clearInterval(extractionPollRef.current);
+            clearAnimationTimers();
+        };
     }, [id]);
 
     const handleProtocolUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -355,6 +516,8 @@ export default function TrialDetailPage() {
 
     const handleReextract = async () => {
         setReextracting(true);
+        // Snapshot current data so we can restore on failure
+        if (trial) preExtractionBackupRef.current = structuredClone(trial);
         try {
             await api.reextractProtocol(id!);
             addToast('Re-extraction started — updating in the background…', 'success');
@@ -362,17 +525,9 @@ export default function TrialDetailPage() {
         } catch (err) {
             addToast((err as Error).message, 'error');
             setReextracting(false);
-            setExtracting(false);
+            setExtractionPhase('idle');
+            preExtractionBackupRef.current = null;
         }
-    };
-
-    const handleSaveCriteria = async () => {
-        try {
-            await api.updateTrial(id!, criteriaForm as unknown as Record<string, unknown>);
-            addToast('Criteria saved', 'success');
-            setEditingCriteria(false);
-            loadTrial();
-        } catch (err) { addToast((err as Error).message, 'error'); }
     };
 
     const emptyVisitForm: VisitForm = { visit_name: '', day_offset: 0, window_before: 3, window_after: 3, reminder_days_before: 3, sort_order: 0 };
@@ -521,7 +676,7 @@ export default function TrialDetailPage() {
                                     <button
                                         className="btn btn-sm btn-ghost"
                                         onClick={handleReextract}
-                                        disabled={reextracting}
+                                        disabled={reextracting || extractionPhase !== 'idle'}
                                         title="Re-run AI extraction on the uploaded protocol PDF"
                                         style={{ color: 'var(--text-tertiary)', marginTop: 'var(--space-2)' }}
                                     >
@@ -541,133 +696,26 @@ export default function TrialDetailPage() {
 
                     {/* I/E Criteria */}
                     <div className="detail-section" style={{ marginTop: 'var(--space-6)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                            <div className="detail-section-title" style={{ marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>Eligibility Criteria</div>
-                            {!editingCriteria && (
-                                <button className="btn btn-sm btn-ghost" onClick={() => setEditingCriteria(true)} style={{ fontSize: 'var(--font-xs)', padding: '2px 8px' }}>Edit</button>
+                        <div className="detail-section-title">Eligibility Criteria</div>
+                        <div style={{ marginTop: 'var(--space-4)' }}>
+                            {extractionPhase === 'waiting' ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                    {[90, 75, 85, 60, 80, 70].map((w, i) => (
+                                        <div key={i} className="skeleton" style={{ height: 36, width: `${w}%`, borderRadius: 6 }} />
+                                    ))}
+                                </div>
+                            ) : trial.protocol?.structured_data ? (
+                                <ProtocolViewer
+                                    structuredData={trial.protocol.structured_data as Parameters<typeof ProtocolViewer>[0]['structuredData']}
+                                    tab="criteria"
+                                    animating={extractionPhase === 'animating'}
+                                />
+                            ) : (
+                                <div className="card" style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
+                                    <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-tertiary)' }}>No criteria defined yet. Upload the protocol to populate eligibility criteria.</p>
+                                </div>
                             )}
                         </div>
-                        {editingCriteria ? (
-                            <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                                <div>
-                                    <label className="form-label" style={{ display: 'block', marginBottom: 'var(--space-2)' }}>Inclusion Criteria</label>
-                                    <RichTextEditor
-                                        value={criteriaForm.inclusion_criteria}
-                                        onChange={v => setCriteriaForm(f => ({ ...f, inclusion_criteria: v }))}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="form-label" style={{ display: 'block', marginBottom: 'var(--space-2)' }}>Exclusion Criteria</label>
-                                    <RichTextEditor
-                                        value={criteriaForm.exclusion_criteria}
-                                        onChange={v => setCriteriaForm(f => ({ ...f, exclusion_criteria: v }))}
-                                    />
-                                </div>
-                                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                                    <button className="btn btn-primary btn-sm" onClick={handleSaveCriteria}>Save</button>
-                                    <button className="btn btn-secondary btn-sm" onClick={() => { setEditingCriteria(false); setCriteriaForm({ inclusion_criteria: trial.inclusion_criteria || '', exclusion_criteria: trial.exclusion_criteria || '' }); }}>Cancel</button>
-                                </div>
-                            </div>
-                        ) : (
-                            <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                                {!trial.inclusion_criteria && !trial.exclusion_criteria ? (
-                                    <div className="card" style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
-                                        <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-tertiary)' }}>No criteria defined yet. Upload the protocol and enter criteria here.</p>
-                                    </div>
-                                ) : (
-                                    <>
-                                        {/* Inclusion panel */}
-                                        {(() => {
-                                            const items = trial.protocol?.structured_data?.inclusion_criteria;
-                                            const count = items?.length ?? 0;
-                                            return (
-                                                <div className="card" style={{ padding: 0, overflow: 'hidden', borderLeft: '2px solid var(--success)' }}>
-                                                    <button
-                                                        onClick={() => setInclusionCollapsed(c => !c)}
-                                                        className="criteria-toggle"
-                                                        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px var(--space-4)', background: 'var(--bg-secondary)', border: 'none', cursor: 'pointer', borderBottom: inclusionCollapsed ? 'none' : '1px solid var(--border)', transition: 'background var(--transition-fast)' }}
-                                                    >
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                                                            <span style={{ fontSize: 'var(--font-base)', fontWeight: 600, color: 'var(--text-primary)' }}>Inclusion Criteria</span>
-                                                            {count > 0 && <span style={{ fontSize: 12, fontWeight: 600, padding: '1px 7px', borderRadius: 10, background: 'rgba(var(--success-rgb, 45,122,79),0.12)', color: 'var(--success)' }}>{count}</span>}
-                                                        </div>
-                                                        <span style={{ fontSize: 14, color: 'var(--text-tertiary)' }}>{inclusionCollapsed ? '▼' : '▲'}</span>
-                                                    </button>
-                                                    {!inclusionCollapsed && (
-                                                        extracting ? (
-                                                            <div style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                                                                {[90, 75, 85, 60, 80, 70].map((w, i) => (
-                                                                    <div key={i} style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', padding: 'var(--space-2) var(--space-3)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)' }}>
-                                                                        <div className="skeleton" style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0 }} />
-                                                                        <div className="skeleton" style={{ height: 13, width: `${w}%` }} />
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        ) : items && items.length > 0 ? (
-                                                            <div style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                                                                {items.map((criterion, i) => (
-                                                                    <div key={i} style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-start', padding: 'var(--space-2) var(--space-3)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)' }}>
-                                                                        <span style={{ minWidth: 22, height: 22, borderRadius: '50%', background: 'rgba(var(--success-rgb, 45,122,79),0.15)', color: 'var(--success)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{i + 1}</span>
-                                                                        <span style={{ fontSize: 'var(--font-base)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{criterion}</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        ) : (
-                                                            <div className="criteria-html" dangerouslySetInnerHTML={{ __html: criteriaToHtml(trial.inclusion_criteria || '') }}
-                                                                style={{ padding: 'var(--space-4)', fontSize: 'var(--font-base)', color: 'var(--text-secondary)', lineHeight: 1.65 }} />
-                                                        )
-                                                    )}
-                                                </div>
-                                            );
-                                        })()}
-                                        {/* Exclusion panel */}
-                                        {(() => {
-                                            const items = trial.protocol?.structured_data?.exclusion_criteria;
-                                            const count = items?.length ?? 0;
-                                            return (
-                                                <div className="card" style={{ padding: 0, overflow: 'hidden', borderLeft: '2px solid var(--error)' }}>
-                                                    <button
-                                                        onClick={() => setExclusionCollapsed(c => !c)}
-                                                        className="criteria-toggle"
-                                                        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px var(--space-4)', background: 'var(--bg-secondary)', border: 'none', cursor: 'pointer', borderBottom: exclusionCollapsed ? 'none' : '1px solid var(--border)', transition: 'background var(--transition-fast)' }}
-                                                    >
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                                                            <span style={{ fontSize: 'var(--font-base)', fontWeight: 600, color: 'var(--text-primary)' }}>Exclusion Criteria</span>
-                                                            {count > 0 && <span style={{ fontSize: 12, fontWeight: 600, padding: '1px 7px', borderRadius: 10, background: 'rgba(var(--error-rgb, 192,57,43),0.12)', color: 'var(--error)' }}>{count}</span>}
-                                                        </div>
-                                                        <span style={{ fontSize: 14, color: 'var(--text-tertiary)' }}>{exclusionCollapsed ? '▼' : '▲'}</span>
-                                                    </button>
-                                                    {!exclusionCollapsed && (
-                                                        extracting ? (
-                                                            <div style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                                                                {[85, 70, 90, 65, 80, 75, 55].map((w, i) => (
-                                                                    <div key={i} style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', padding: 'var(--space-2) var(--space-3)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)' }}>
-                                                                        <div className="skeleton" style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0 }} />
-                                                                        <div className="skeleton" style={{ height: 13, width: `${w}%` }} />
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        ) : items && items.length > 0 ? (
-                                                            <div style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                                                                {items.map((criterion, i) => (
-                                                                    <div key={i} style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-start', padding: 'var(--space-2) var(--space-3)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)' }}>
-                                                                        <span style={{ minWidth: 22, height: 22, borderRadius: '50%', background: 'rgba(var(--error-rgb, 192,57,43),0.12)', color: 'var(--error)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{i + 1}</span>
-                                                                        <span style={{ fontSize: 'var(--font-base)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{criterion}</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        ) : (
-                                                            <div className="criteria-html" dangerouslySetInnerHTML={{ __html: criteriaToHtml(trial.exclusion_criteria || '') }}
-                                                                style={{ padding: 'var(--space-4)', fontSize: 'var(--font-base)', color: 'var(--text-secondary)', lineHeight: 1.65 }} />
-                                                        )
-                                                    )}
-                                                </div>
-                                            );
-                                        })()}
-                                    </>
-                                )}
-                            </div>
-                        )}
                     </div>
 
                     {/* Cases Tabs */}
@@ -775,12 +823,9 @@ export default function TrialDetailPage() {
 
                     {/* Visit Schedule */}
                     <div className="detail-section">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div className="detail-section-title" style={{ marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>Visit Schedule</div>
-                            <button className="btn btn-sm btn-secondary" onClick={() => setShowVisitModal(true)}>+ Add Visit</button>
-                        </div>
+                        <div className="detail-section-title">Visit Schedule</div>
                         <div style={{ marginTop: 'var(--space-4)' }}>
-                            {extracting ? (
+                            {extractionPhase === 'waiting' ? (
                                 <div className="card" style={{ padding: 'var(--space-4)' }}>
                                     {[80, 65, 75, 55, 70].map((w, i) => (
                                         <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', marginBottom: i < 4 ? 'var(--space-4)' : 0 }}>
@@ -792,62 +837,15 @@ export default function TrialDetailPage() {
                                         </div>
                                     ))}
                                 </div>
-                            ) : (!trial.visit_templates || trial.visit_templates.length === 0) ? (
-                                <div className="card" style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
-                                    <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-tertiary)' }}>No visits defined. Add visits to set up the study schedule.</p>
-                                </div>
+                            ) : trial.protocol?.structured_data ? (
+                                <ProtocolViewer
+                                    structuredData={trial.protocol.structured_data as Parameters<typeof ProtocolViewer>[0]['structuredData']}
+                                    tab="visits"
+                                    animating={extractionPhase === 'animating'}
+                                />
                             ) : (
-                                <div className="card" style={{ padding: 'var(--space-4)', maxHeight: 480, overflowY: 'auto' }}>
-                                    {trial.visit_templates.map((vt, i) => (
-                                        <div key={vt.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
-                                            {/* Left: connector line + circle */}
-                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 32 }}>
-                                                <button
-                                                    onClick={() => { setSelectedVisit(vt); setVisitNotes(vt.notes || ''); }}
-                                                    style={{
-                                                        width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-                                                        background: 'var(--accent-muted)', color: 'var(--accent)',
-                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                        fontSize: 'var(--font-xs)', fontWeight: 700,
-                                                        border: '2px solid var(--accent)',
-                                                        cursor: 'pointer', padding: 0,
-                                                    }}
-                                                >
-                                                    {i + 1}
-                                                </button>
-                                                {i < trial.visit_templates.length - 1 && (
-                                                    <div style={{ width: 2, flex: 1, minHeight: 24, background: 'var(--border)', marginTop: 2, marginBottom: 2 }} />
-                                                )}
-                                            </div>
-                                            {/* Right: visit info + actions */}
-                                            <div style={{ flex: 1, paddingBottom: i < trial.visit_templates.length - 1 ? 'var(--space-3)' : 0 }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                    <button
-                                                        onClick={() => { setSelectedVisit(vt); setVisitNotes(vt.notes || ''); }}
-                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}
-                                                    >
-                                                        <div style={{ fontWeight: 600, fontSize: 'var(--font-base)', color: 'var(--text-primary)', lineHeight: 1.3 }}>{vt.visit_name}</div>
-                                                        <div style={{ fontSize: 'var(--font-sm)', color: 'var(--accent)', fontWeight: 600, marginTop: 2 }}>
-                                                            Day {vt.day_offset}
-                                                            <span style={{ color: 'var(--text-tertiary)', fontWeight: 400, marginLeft: 6 }}>±{vt.window_before}/{vt.window_after}d</span>
-                                                        </div>
-                                                    </button>
-                                                    <div style={{ display: 'flex', gap: 2, flexShrink: 0, marginLeft: 'var(--space-2)' }}>
-                                                        <button
-                                                            className="btn btn-sm btn-ghost"
-                                                            onClick={() => { setSelectedVisit(vt); setVisitNotes(vt.notes || ''); }}
-                                                            style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-sm)', padding: '2px 8px' }}
-                                                        >Edit</button>
-                                                        <button
-                                                            className="btn btn-sm btn-ghost"
-                                                            onClick={() => handleDeleteVisit(vt.id)}
-                                                            style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-sm)', padding: '2px 8px' }}
-                                                        >✕</button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
+                                <div className="card" style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
+                                    <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-tertiary)' }}>No visit schedule yet. Upload the protocol to populate visits.</p>
                                 </div>
                             )}
                         </div>
@@ -860,7 +858,7 @@ export default function TrialDetailPage() {
                             <button className="btn btn-sm btn-secondary" onClick={() => setShowSignalModal(true)}>+ Add Rule</button>
                         </div>
                         <div style={{ marginTop: 'var(--space-4)' }}>
-                            {extracting ? (
+                            {extractionPhase === 'waiting' ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                                     {[70, 85, 60, 78, 65, 90].map((w, i) => (
                                         <div key={i} className="card" style={{ padding: 'var(--space-3) var(--space-4)' }}>
@@ -874,40 +872,43 @@ export default function TrialDetailPage() {
                                     <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-tertiary)' }}>No signal rules configured. Add rules to define eligibility thresholds.</p>
                                 </div>
                             ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                                    {trial.signal_rules.map(rule => (
-                                        <div key={rule.id} className="card" style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
-                                            <div style={{ flex: 1 }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                                                    <span style={{ fontWeight: 500, fontSize: 'var(--font-base)' }}>{rule.signal_label}</span>
-                                                    {rule.source === 'ai_extracted' && (
-                                                        <span style={{ fontSize: 11, fontWeight: 600, padding: '1px 6px', borderRadius: 8, background: 'var(--accent-muted)', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI</span>
-                                                    )}
-                                                </div>
-                                                {rule.criteria_text ? (
-                                                    <div style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--accent)', marginTop: 2 }}>
-                                                        {rule.criteria_text}
-                                                    </div>
-                                                ) : rule.operator === 'BETWEEN' && (rule.min_value != null || rule.max_value != null) ? (
-                                                    <div style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--accent)', marginTop: 2 }}>
-                                                        {rule.min_value}–{rule.max_value}
-                                                        {rule.unit && <span style={{ fontSize: 'var(--font-sm)', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 4 }}>{rule.unit}</span>}
-                                                    </div>
-                                                ) : (
-                                                    <div style={{ fontSize: 'var(--font-base)', fontWeight: 700, color: 'var(--accent)', marginTop: 2 }}>
-                                                        {operatorLabels[rule.operator] || rule.operator}{' '}
-                                                        {rule.threshold_number != null ? rule.threshold_number : rule.threshold_text || ''}
-                                                        {rule.threshold_list && JSON.parse(rule.threshold_list).join(', ')}
-                                                        {rule.unit && <span style={{ fontSize: 'var(--font-sm)', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 4 }}>{rule.unit}</span>}
-                                                    </div>
-                                                )}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                    {trial.signal_rules.map((rule, ruleIndex) => {
+                                        const isBetween = rule.operator === 'BETWEEN';
+                                        const isMatch = rule.operator === 'TEXT_MATCH';
+                                        const chipType = isBetween ? 'BETWEEN' : isMatch ? 'MATCH' : 'NUMERIC';
+                                        const chipStyles: Record<string, React.CSSProperties> = {
+                                            NUMERIC: { background: '#dbeafe', color: '#1d4ed8' },
+                                            BETWEEN: { background: '#ede9fe', color: '#7c3aed' },
+                                            MATCH:   { background: '#fef3c7', color: '#b45309' },
+                                        };
+                                        const thresholdDisplay = isBetween
+                                            ? `${rule.min_value ?? '?'} – ${rule.max_value ?? '?'}${rule.unit ? ' ' + rule.unit : ''}`
+                                            : isMatch
+                                            ? (rule.threshold_text || rule.criteria_text || '')
+                                            : `${operatorLabels[rule.operator] || rule.operator} ${rule.threshold_number ?? rule.threshold_text ?? ''}${rule.unit ? ' ' + rule.unit : ''}`;
+
+                                        return (
+                                            <div
+                                                key={rule.id}
+                                                className={extractionPhase === 'animating' ? 'rule-fade-in' : undefined}
+                                                style={extractionPhase === 'animating' ? { animationDelay: `${ruleIndex * 100}ms` } : undefined}
+                                            >
+                                            <SignalRuleCard
+                                                chipLabel={chipType}
+                                                chipStyle={chipStyles[chipType]}
+                                                label={rule.signal_label || ''}
+                                                field={rule.field}
+                                                threshold={thresholdDisplay}
+                                                isMatch={isMatch}
+                                                citationText={rule.criteria_text || null}
+                                                isAI={rule.source === 'ai_extracted'}
+                                                onEdit={() => { setEditingRule(rule); setSignalForm({ mode: rule.source === 'ai_extracted' || !rule.signal_type_id ? 'freeform' : 'catalog', signal_type_id: rule.signal_type_id || '', signal_label: rule.signal_label || '', criteria_text: rule.criteria_text || '', operator: rule.operator, threshold_number: rule.threshold_number?.toString() ?? '', min_value: rule.min_value?.toString() ?? '', max_value: rule.max_value?.toString() ?? '', unit: rule.unit ?? '' }); }}
+                                                onDelete={() => handleDeleteSignal(rule.id)}
+                                            />
                                             </div>
-                                            <div style={{ display: 'flex', gap: 'var(--space-1)', flexShrink: 0 }}>
-                                                <button className="btn btn-sm btn-ghost" onClick={() => { setEditingRule(rule); setSignalForm({ mode: rule.source === 'ai_extracted' || !rule.signal_type_id ? 'freeform' : 'catalog', signal_type_id: rule.signal_type_id || '', signal_label: rule.signal_label || '', criteria_text: rule.criteria_text || '', operator: rule.operator, threshold_number: rule.threshold_number?.toString() ?? '', min_value: rule.min_value?.toString() ?? '', max_value: rule.max_value?.toString() ?? '', unit: rule.unit ?? '' }); }} style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-sm)' }}>Edit</button>
-                                                <button className="btn btn-sm btn-ghost" onClick={() => handleDeleteSignal(rule.id)} style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-sm)' }}>✕</button>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
