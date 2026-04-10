@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
-import pdfParse from 'pdf-parse';
 import * as XLSX from 'xlsx';
 import { authMiddleware, requireRole, auditLog } from '../middleware/auth';
 import { extractPatientDocument } from '../services/aiIngestion';
 import { mergePatientDocument } from '../services/patientClinicalData';
+import { matchPatientToProtocol } from '../services/patientMatching';
+import type { StructuredProtocol } from '../types/clinicalSchemas';
 
 const router = Router();
 router.use(authMiddleware);
@@ -275,12 +276,9 @@ router.post('/upload-document', upload.single('file'), async (req: Request, res:
 
         if (req.file.mimetype === 'application/pdf') {
             try {
-                const pdfData = await pdfParse(req.file.buffer);
-                // Regex fallback for basic fields
-                extracted = extractPatientInfo(pdfData.text);
-                // AI full extraction
+                // AI native PDF extraction (reads the PDF directly — works on scanned docs)
                 console.log('[Document] Running AI extraction...');
-                const aiExtracted = await extractPatientDocument(pdfData.text);
+                const aiExtracted = await extractPatientDocument(req.file.buffer);
                 structuredData = aiExtracted as Record<string, unknown>;
                 // Merge AI demographics into extracted (AI takes precedence)
                 if (aiExtracted.first_name) extracted.first_name = aiExtracted.first_name;
@@ -351,31 +349,88 @@ router.post('/upload-document', upload.single('file'), async (req: Request, res:
              structuredData ? JSON.stringify(structuredData) : null]
         );
 
-        // Merge structured data into unified patient clinical profile
+        // Merge structured data into unified patient clinical profile (blocking so data is ready immediately)
         if (structuredData) {
-            mergePatientDocument(db, req.user.site_id, finalPatientId, docId, structuredData as Parameters<typeof mergePatientDocument>[4])
-                .catch(mergeErr => console.error('[Document] Clinical data merge failed:', mergeErr));
-        }
-
-        const signalMap: Record<string, string> = { fibroscan_kpa: 'sig-001', alt: 'sig-004', ast: 'sig-005', platelets: 'sig-003', bmi: 'sig-009' };
-        const signalsCreated: string[] = [];
-        for (const [key, sigId] of Object.entries(signalMap)) {
-            if (extracted[key] !== undefined) {
-                const sigExists = (await db.query('SELECT id FROM signal_types WHERE id = $1 AND site_id = $2', [sigId, req.user.site_id])).rows[0];
-                if (sigExists) {
-                    const psId = uuidv4();
-                    await db.query(
-                        `INSERT INTO patient_signals (id, site_id, patient_id, signal_type_id, value_number, collected_at, source, entered_by_user_id)
-                         VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7)`,
-                        [psId, req.user.site_id, finalPatientId, sigId, extracted[key], `Document: ${req.file.originalname}`, req.user.id]
-                    );
-                    signalsCreated.push(key);
-                }
+            try {
+                await mergePatientDocument(db, req.user.site_id, finalPatientId, docId, structuredData as Parameters<typeof mergePatientDocument>[4]);
+            } catch (mergeErr) {
+                console.error('[Document] Clinical data merge failed:', mergeErr);
             }
         }
 
+        // Dynamic signal bridging: match extracted labs/vitals/imaging against site signal_types by name
+        const { rows: allSignalTypes } = await db.query(
+            'SELECT id, name, label, value_type FROM signal_types WHERE site_id = $1',
+            [req.user.site_id]
+        );
+
+        const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const SIGNAL_ALIASES: Record<string, string> = {
+            fibroscan: 'fibroscankpa', lsm: 'fibroscankpa', elastography: 'fibroscankpa',
+            liverstiffnessmeasurement: 'fibroscankpa', fibroscanlsm: 'fibroscankpa',
+            plateletcount: 'platelets', plt: 'platelets',
+            hbsantigen: 'hbsag', hepatitisbsurfaceantigen: 'hbsag',
+            hbvviralload: 'hbvdna', hbvload: 'hbvdna',
+            meld: 'meldscore', nas: 'nasscore',
+        };
+
+        const sigLookup = new Map<string, { id: string; value_type: string }>();
+        for (const st of allSignalTypes) {
+            sigLookup.set(normalize(st.name), { id: st.id, value_type: st.value_type });
+            sigLookup.set(normalize(st.label), { id: st.id, value_type: st.value_type });
+        }
+
+        const signalsCreated: string[] = [];
+        const docSource = `Document: ${req.file.originalname}`;
+
+        const tryBridgeSignal = async (name: string, value: unknown, date?: string) => {
+            if (value === undefined || value === null || value === '') return;
+            const numVal = Number(value);
+            if (isNaN(numVal)) return; // only bridge numeric values
+            const key = normalize(name);
+            const sig = sigLookup.get(key) || sigLookup.get(SIGNAL_ALIASES[key] || '');
+            if (!sig || sig.value_type !== 'NUMBER') return;
+            const psId = uuidv4();
+            const collectedAt = date ? new Date(date).toISOString() : new Date().toISOString();
+            await db.query(
+                `INSERT INTO patient_signals (id, site_id, patient_id, signal_type_id, value_number, collected_at, source, entered_by_user_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [psId, req.user.site_id, finalPatientId, sig.id, numVal, collectedAt, docSource, req.user.id]
+            );
+            signalsCreated.push(name);
+        };
+
+        if (structuredData) {
+            const sd = structuredData as Record<string, unknown>;
+            for (const lab of (sd.labs as { name: string; value: unknown; date?: string }[] || [])) {
+                await tryBridgeSignal(lab.name, lab.value, lab.date);
+            }
+            for (const vital of (sd.vitals as { name: string; value: unknown; date?: string }[] || [])) {
+                await tryBridgeSignal(vital.name, vital.value, vital.date);
+            }
+            for (const img of (sd.imaging as { type: string; value?: unknown; date?: string }[] || [])) {
+                if (img.value !== undefined) await tryBridgeSignal(img.type, img.value, img.date);
+            }
+        }
+
+        // Build extraction summary for the frontend review modal
+        const sd = structuredData as Record<string, unknown> | null;
+        const keyLabs = ((sd?.labs as { name: string; value: unknown; unit?: string; flag?: string | null }[] | undefined) || []).slice(0, 6)
+            .map(l => ({ name: l.name, value: l.value, unit: l.unit, flag: l.flag }));
+        const extractionSummary = sd ? {
+            diagnoses_count: ((sd.diagnoses as unknown[]) || []).length,
+            medications_count: ((sd.medications as unknown[]) || []).length,
+            labs_count: ((sd.labs as unknown[]) || []).length,
+            vitals_count: ((sd.vitals as unknown[]) || []).length,
+            imaging_count: ((sd.imaging as unknown[]) || []).length,
+            key_labs: keyLabs,
+        } : null;
+
         const patient = (await db.query('SELECT * FROM patients WHERE id = $1', [finalPatientId])).rows[0];
-        res.status(201).json({ document_id: docId, patient, patient_created: patientCreated, extracted, signals_created: signalsCreated });
+        res.status(201).json({
+            document_id: docId, patient, patient_created: patientCreated,
+            extracted, signals_created: signalsCreated, extraction_summary: extractionSummary,
+        });
 
     } catch (err) {
         console.error('[Document] Upload error:', err);
@@ -453,10 +508,176 @@ router.get('/:id/clinical-data', async (req: Request, res: Response) => {
     });
 });
 
+// Signal-rule alignment: evaluate patient's signals against all active trial rules (no AI)
+router.get('/:id/signal-rule-alignment', async (req: Request, res: Response) => {
+    const db = req.app.locals.db;
+    const { rows } = await db.query(
+        `SELECT
+           tsr.id as rule_id, tsr.operator, tsr.threshold_number, tsr.threshold_text, tsr.threshold_list,
+           tsr.min_value, tsr.max_value,
+           t.id as trial_id, t.name as trial_name, t.protocol_number,
+           st.name as signal_name, st.label as signal_label, st.unit as signal_unit, st.value_type,
+           ps.value_number as patient_value_number,
+           ps.value_enum as patient_value_enum,
+           ps.value_text as patient_value_text,
+           ps.collected_at as patient_signal_date
+         FROM trial_signal_rules tsr
+         JOIN trials t ON tsr.trial_id = t.id
+         JOIN signal_types st ON tsr.signal_type_id = st.id
+         LEFT JOIN LATERAL (
+           SELECT value_number, value_enum, value_text, collected_at
+           FROM patient_signals
+           WHERE patient_id = $1 AND signal_type_id = tsr.signal_type_id AND site_id = $2
+           ORDER BY collected_at DESC LIMIT 1
+         ) ps ON true
+         WHERE tsr.site_id = $2 AND tsr.is_active = true
+           AND t.recruiting_status = 'ACTIVE'
+           AND tsr.signal_type_id IS NOT NULL
+         ORDER BY t.name, st.label`,
+        [req.params.id, req.user.site_id]
+    );
+
+    const evaluated = rows.map(r => {
+        const patientValue = r.patient_value_number ?? r.patient_value_enum ?? r.patient_value_text ?? null;
+        let passes: boolean | null = null;
+        if (patientValue !== null) {
+            if (r.value_type === 'NUMBER') {
+                const numVal = Number(r.patient_value_number);
+                switch (r.operator) {
+                    case 'GTE': passes = numVal >= (r.threshold_number ?? 0); break;
+                    case 'LTE': passes = numVal <= (r.threshold_number ?? 0); break;
+                    case 'EQ': passes = numVal === r.threshold_number; break;
+                    case 'BETWEEN': passes = r.min_value !== null && r.max_value !== null && numVal >= r.min_value && numVal <= r.max_value; break;
+                    default: passes = null;
+                }
+            } else {
+                const strVal = String(patientValue);
+                switch (r.operator) {
+                    case 'EQ': passes = strVal === r.threshold_text; break;
+                    case 'IN': { try { const list = JSON.parse(r.threshold_list || '[]') as string[]; passes = list.includes(strVal); } catch { passes = null; } break; }
+                    case 'TEXT_MATCH': passes = strVal.toLowerCase().includes((r.threshold_text || '').toLowerCase()); break;
+                    default: passes = null;
+                }
+            }
+        }
+        return {
+            rule_id: r.rule_id, trial_id: r.trial_id, trial_name: r.trial_name, protocol_number: r.protocol_number,
+            signal_name: r.signal_name, signal_label: r.signal_label,
+            operator: r.operator, threshold_number: r.threshold_number, threshold_text: r.threshold_text,
+            threshold_list: r.threshold_list, min_value: r.min_value, max_value: r.max_value,
+            unit: r.rule_unit || r.signal_unit, value_type: r.value_type,
+            patient_value_number: r.patient_value_number, patient_value_enum: r.patient_value_enum,
+            patient_value_text: r.patient_value_text, patient_signal_date: r.patient_signal_date,
+            passes,
+        };
+    });
+
+    res.json(evaluated);
+});
+
+// Single-patient AI match against all active trials with extracted criteria
+router.post('/:id/match', async (req: Request, res: Response) => {
+    const db = req.app.locals.db;
+    const patientId = req.params.id;
+    const { trial_id } = req.body as { trial_id?: string };
+
+    const patient = (await db.query(
+        'SELECT * FROM patients WHERE id = $1 AND site_id = $2',
+        [patientId, req.user.site_id]
+    )).rows[0];
+    if (!patient) { res.status(404).json({ error: 'Patient not found' }); return; }
+
+    let trialSql = `SELECT * FROM trials WHERE site_id = $1 AND extracted_criteria_json IS NOT NULL AND recruiting_status = 'ACTIVE'`;
+    const trialParams: unknown[] = [req.user.site_id];
+    if (trial_id) { trialSql += ' AND id = $2'; trialParams.push(trial_id); }
+    const { rows: trials } = await db.query(trialSql, trialParams);
+
+    if (trials.length === 0) {
+        res.json({ results: [], matched: 0, message: 'No active trials with extracted criteria found.' });
+        return;
+    }
+
+    // Build patient bundle
+    const [{ rows: signals }, { rows: docs }] = await Promise.all([
+        db.query(
+            `SELECT ps.value_number, ps.value_text, ps.value_enum, ps.collected_at,
+                    st.name as signal_name, st.unit
+             FROM patient_signals ps JOIN signal_types st ON ps.signal_type_id = st.id
+             WHERE ps.patient_id = $1 AND ps.site_id = $2 ORDER BY ps.collected_at DESC`,
+            [patientId, req.user.site_id]
+        ),
+        db.query(
+            `SELECT structured_data FROM patient_documents
+             WHERE patient_id = $1 AND structured_data IS NOT NULL ORDER BY created_at DESC LIMIT 5`,
+            [patientId]
+        ),
+    ]);
+
+    const mergedDocData: Record<string, unknown> = {};
+    for (const doc of [...docs].reverse()) {
+        try {
+            const parsed = (typeof doc.structured_data === 'string' ? JSON.parse(doc.structured_data as string) : doc.structured_data) as Record<string, unknown>;
+            Object.assign(mergedDocData, parsed);
+        } catch { /* skip */ }
+    }
+
+    const signalMap: Record<string, unknown> = {};
+    for (const sig of signals) {
+        const val = sig.value_number ?? sig.value_text ?? sig.value_enum;
+        signalMap[sig.signal_name as string] = { value: val, unit: sig.unit, date: sig.collected_at };
+    }
+
+    const patientBundle = { id: patient.id, first_name: patient.first_name, last_name: patient.last_name, dob: patient.dob, ...mergedDocData, signals: signalMap };
+
+    const results: unknown[] = [];
+    for (const trial of trials) {
+        try {
+            const criteria = JSON.parse(trial.extracted_criteria_json as string) as StructuredProtocol;
+            const result = await matchPatientToProtocol(patientBundle, criteria);
+
+            const signalId = uuidv4();
+            await db.query(
+                `INSERT INTO patient_protocol_signals
+                 (id, site_id, patient_id, trial_id, overall_status, confidence, criteria_breakdown, summary, missing_data, last_evaluated_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+                 ON CONFLICT (patient_id, trial_id)
+                 DO UPDATE SET overall_status=$5, confidence=$6, criteria_breakdown=$7, summary=$8, missing_data=$9, last_evaluated_at=NOW()`,
+                [signalId, req.user.site_id, patientId, trial.id, result.overall_status, result.confidence,
+                 JSON.stringify(result.criteria_results), result.summary, JSON.stringify(result.missing_data)]
+            );
+
+            if (result.overall_status === 'LIKELY_ELIGIBLE' || result.overall_status === 'BORDERLINE') {
+                const existing = (await db.query(
+                    'SELECT id FROM screening_cases WHERE patient_id = $1 AND trial_id = $2 AND site_id = $3',
+                    [patientId, trial.id, req.user.site_id]
+                )).rows[0];
+                if (!existing) {
+                    const caseId = uuidv4();
+                    await db.query(
+                        `INSERT INTO screening_cases (id, site_id, patient_id, trial_id, assigned_user_id, status, last_touched_at)
+                         VALUES ($1,$2,$3,$4,$5,'NEW',NOW())`,
+                        [caseId, req.user.site_id, patientId, trial.id, req.user.id]
+                    );
+                    await db.query(
+                        'UPDATE patient_protocol_signals SET auto_assigned=true, assigned_at=NOW() WHERE patient_id=$1 AND trial_id=$2',
+                        [patientId, trial.id]
+                    );
+                }
+            }
+
+            results.push({ trial_id: trial.id, trial_name: trial.name, ...result });
+        } catch (err) {
+            console.error(`[Match] Error matching patient ${patientId} to trial ${trial.id}:`, err);
+        }
+    }
+
+    res.json({ results, matched: results.length });
+});
+
 router.get('/:id/protocol-signals', async (req: Request, res: Response) => {
     const db = req.app.locals.db;
     const { rows } = await db.query(
-        `SELECT pps.*, t.name as trial_name, t.protocol_number, t.indication, t.specialty
+        `SELECT pps.*, t.name as trial_name, t.protocol_number
          FROM patient_protocol_signals pps
          JOIN trials t ON pps.trial_id = t.id
          WHERE pps.patient_id = $1 AND pps.site_id = $2

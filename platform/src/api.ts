@@ -4,7 +4,8 @@ import type {
     SignalType, ScreenFailReason, ReferralSource, Note,
     PatientVisit, TodayData, UpcomingVisit, UploadResult,
     EnrollResult, AddSignalResult, PendingItem, BatchImportResult,
-    PatientClinicalData,
+    PatientClinicalData, ProtocolSignal, SignalRuleAlignment,
+    SiteSettingsResponse, SiteConfig, SpecialtyKey,
 } from './types';
 
 const API_BASE = '/api';
@@ -191,6 +192,11 @@ export const api = {
         return data as UploadResult;
     },
     getPatientClinicalData: (patientId: string) => request<PatientClinicalData>(`/patients/${patientId}/clinical-data`),
+    getPatientProtocolSignals: (patientId: string) => request<ProtocolSignal[]>(`/patients/${patientId}/protocol-signals`),
+    getSignalRuleAlignment: (patientId: string) => request<SignalRuleAlignment[]>(`/patients/${patientId}/signal-rule-alignment`),
+    matchPatient: (patientId: string, trialId?: string) =>
+        request<{ results: Array<{ trial_id: string; trial_name: string; overall_status: string; confidence: string; summary: string }>; matched: number }>
+        (`/patients/${patientId}/match`, { method: 'POST', body: trialId ? { trial_id: trialId } : {} }),
     getPatientDocuments: (patientId: string) => request(`/patients/${patientId}/documents`),
     getDocumentUrl: (patientId: string, docId: string) => `${API_BASE}/patients/${patientId}/documents/${docId}/download`,
     deletePatient: (patientId: string) => request(`/patients/${patientId}`, { method: 'DELETE' }),
@@ -202,6 +208,16 @@ export const api = {
     createNote: (data: Record<string, unknown>) => request<Note>('/notes', { method: 'POST', body: data }),
     updateNote: (id: string, data: Record<string, unknown>) => request<Note>(`/notes/${id}`, { method: 'PATCH', body: data }),
     deleteNote: (id: string) => request(`/notes/${id}`, { method: 'DELETE' }),
+
+    // Settings
+    getSiteSettings: () => request<SiteSettingsResponse>('/settings/site'),
+    updateSiteSettings: (data: { specialties: SpecialtyKey[]; enabled_options?: string[] }) =>
+        request<SiteConfig>('/settings/site', { method: 'PATCH', body: data }),
+    updateSiteName: (name: string) => request<{ id: string; name: string }>('/settings/site-name', { method: 'PATCH', body: { name } }),
+    getSiteTeam: () => request<{ id: string; name: string; email: string; role: string; is_active: boolean; created_at: string }[]>('/settings/users'),
+    updateTeamMember: (id: string, data: { is_active?: boolean; role?: string }) =>
+        request<{ id: string; name: string; email: string; role: string; is_active: boolean }>(`/settings/users/${id}`, { method: 'PATCH', body: data }),
+    rejectTeamMember: (id: string) => request(`/settings/users/${id}`, { method: 'DELETE' }),
 
     // Intake Submissions
     getIntakeSubmissions: (status = 'PENDING') =>

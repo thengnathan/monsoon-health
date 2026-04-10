@@ -128,8 +128,8 @@ export async function runProtocolMatching(
             );
 
             const { rows: docs } = await db.query(
-                `SELECT raw_extracted_data FROM patient_documents
-                 WHERE patient_id = $1 AND raw_extracted_data IS NOT NULL
+                `SELECT structured_data FROM patient_documents
+                 WHERE patient_id = $1 AND structured_data IS NOT NULL
                  ORDER BY created_at DESC LIMIT 5`,
                 [patient.id]
             );
@@ -138,7 +138,9 @@ export async function runProtocolMatching(
             const mergedDocData: Record<string, unknown> = {};
             for (const doc of docs.reverse()) {
                 try {
-                    const parsed = JSON.parse(doc.raw_extracted_data as string) as Record<string, unknown>;
+                    const parsed = (typeof doc.structured_data === 'string'
+                        ? JSON.parse(doc.structured_data as string)
+                        : doc.structured_data) as Record<string, unknown>;
                     Object.assign(mergedDocData, parsed);
                 } catch { /* skip unparseable */ }
             }

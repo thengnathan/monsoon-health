@@ -391,16 +391,65 @@ export interface TodayData {
     revisit_due: TodayRevisitCase[];
 }
 
+export interface ExtractionSummary {
+    diagnoses_count: number;
+    medications_count: number;
+    labs_count: number;
+    vitals_count: number;
+    imaging_count: number;
+    key_labs: { name: string; value: number | string; unit?: string; flag?: string | null }[];
+}
+
 export interface UploadResult {
     patient_created: boolean;
     patient: Patient;
     extracted: Record<string, unknown>;
     signals_created: string[];
-    document: {
-        id: string;
-        filename: string;
-        document_type: string;
-    };
+    document_id: string;
+    extraction_summary?: ExtractionSummary | null;
+}
+
+export interface ProtocolSignal {
+    id: string;
+    trial_id: string;
+    trial_name: string;
+    protocol_number: string | null;
+    indication: string | null;
+    specialty: string | null;
+    overall_status: 'LIKELY_ELIGIBLE' | 'BORDERLINE' | 'LIKELY_INELIGIBLE';
+    confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+    summary: string;
+    missing_data: string[];
+    criteria_breakdown: {
+        criterion: string;
+        type: 'inclusion' | 'exclusion';
+        status: 'PASS' | 'FAIL' | 'UNKNOWN';
+        reason: string;
+    }[];
+    last_evaluated_at: string;
+    auto_assigned: boolean;
+}
+
+export interface SignalRuleAlignment {
+    rule_id: string;
+    trial_id: string;
+    trial_name: string;
+    protocol_number: string | null;
+    signal_name: string;
+    signal_label: string;
+    operator: string;
+    threshold_number: number | null;
+    threshold_text: string | null;
+    threshold_list: string | null;
+    min_value: number | null;
+    max_value: number | null;
+    unit: string | null;
+    value_type: string;
+    patient_value_number: number | null;
+    patient_value_enum: string | null;
+    patient_value_text: string | null;
+    patient_signal_date: string | null;
+    passes: boolean | null;
 }
 
 export interface EnrollResult {
@@ -421,6 +470,44 @@ export interface BatchImportResult {
     errors: { row: number; error: string }[];
     created_patients: { id: string; first_name: string; last_name: string }[];
     skipped_rows: { row: number; reason: string }[];
+}
+
+// ── Site / Settings types ──────────────────────────────────
+export type SpecialtyKey = 'HEPATOLOGY' | 'ONCOLOGY' | 'HEMATOLOGY';
+
+export interface SpecialtyOption {
+    id: string;
+    label: string;
+    section: 'signals' | 'labs' | 'vitals' | 'imaging' | 'diagnoses' | 'medications' | 'lifestyle' | 'surgical_history' | 'family_history';
+}
+
+export interface SpecialtyTemplate {
+    key: SpecialtyKey;
+    label: string;
+    description: string;
+    color: string;
+    options: SpecialtyOption[];
+    signalTypeNames: string[];
+    columnAliases: Record<string, string>;
+}
+
+export interface SitePatientProfileConfig {
+    specialties: SpecialtyKey[];
+    enabled_options: string[];
+}
+
+export interface SiteConfig {
+    id: string;
+    name: string;
+    timezone: string;
+    specialties: SpecialtyKey[];
+    patient_profile_config: SitePatientProfileConfig;
+}
+
+export interface SiteSettingsResponse {
+    site: SiteConfig;
+    specialty_templates: Record<SpecialtyKey, SpecialtyTemplate>;
+    all_specialty_keys: SpecialtyKey[];
 }
 
 // ── Component-specific types ───────────────────────────────

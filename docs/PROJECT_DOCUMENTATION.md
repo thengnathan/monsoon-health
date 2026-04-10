@@ -1,6 +1,6 @@
 # Monsoon Health — Project Documentation
 
-> **Last updated:** March 31, 2026
+> **Last updated:** April 5, 2026
 >
 > Complete technical reference for contributors. This document covers architecture, codebase structure, database schema, API surface, AI pipelines, background jobs, and developer workflows.
 
@@ -74,18 +74,22 @@ Monsoon Health/
 │   │   │   ├── AuthContext.tsx        # Maps Clerk user → internal user, token mgmt
 │   │   │   └── ToastContext.tsx       # Toast notification system
 │   │   ├── components/
-│   │   │   ├── Layout.tsx             # Sidebar nav, UserButton, theme toggle
+│   │   │   ├── Layout.tsx             # Sidebar nav, UserButton, theme toggle, floating notes
 │   │   │   ├── StormyBackdrop.tsx     # Three.js animated background
-│   │   │   └── LiquidSilkBackground.tsx # Alternate animated background
+│   │   │   ├── LiquidSilkBackground.tsx # Alternate animated background
+│   │   │   ├── WaveBackground.tsx     # Wave animation background
+│   │   │   └── ProtocolViewer.tsx     # Rich protocol viewer with HTML formatting
 │   │   ├── pages/
 │   │   │   ├── DashboardPage.tsx      # "Today" — stats, active cases, pending items
 │   │   │   ├── PatientsPage.tsx       # Patient list: search, filter, create, bulk import
-│   │   │   ├── PatientDetailPage.tsx  # Patient profile, signals, documents
+│   │   │   ├── PatientDetailPage.tsx  # Patient profile, signals, documents, clinical data
 │   │   │   ├── TrialsPage.tsx         # Trial list with status filtering
 │   │   │   ├── TrialDetailPage.tsx    # Trial config, criteria, signals, protocols, visits
 │   │   │   ├── ScreeningCasesPage.tsx # Screening case list
 │   │   │   ├── ScreeningCaseDetailPage.tsx # Full case workflow, status, pending items
 │   │   │   ├── NotesPage.tsx          # Personal notes: pin, color, floating popup
+│   │   │   ├── IntakeFormPage.tsx     # Patient intake form (token-gated, multi-section)
+│   │   │   ├── IntakeSubmissionsPage.tsx # Submitted intake forms list
 │   │   │   ├── LoginPage.tsx          # Clerk <SignIn>
 │   │   │   └── SignUpPage.tsx         # Clerk <SignUp>
 │   │   └── types/
@@ -129,12 +133,14 @@ Monsoon Health/
 │   │   │   ├── notifications.ts       # Notification events CRUD
 │   │   │   ├── notes.ts               # Personal notes CRUD
 │   │   │   ├── today.ts               # Dashboard aggregate data
-│   │   │   └── email.ts               # Email endpoints (waitlist, contact)
+│   │   │   ├── email.ts               # Email endpoints (waitlist, contact)
+│   │   │   └── intake.ts              # Patient intake form submissions
 │   │   ├── services/
-│   │   │   ├── aiIngestion.ts         # Protocol & patient document AI extraction
-│   │   │   ├── patientMatching.ts     # AI patient ↔ protocol eligibility matching
+│   │   │   ├── aiIngestion.ts         # Protocol PDF extraction (Claude Sonnet, native PDF)
+│   │   │   ├── patientMatching.ts     # AI patient ↔ protocol eligibility matching (Claude Haiku)
+│   │   │   ├── patientClinicalData.ts # Patient document extraction + clinical data unification
 │   │   │   ├── alertEngine.ts         # Signal threshold evaluation + notification creation
-│   │   │   ├── claude.ts              # Anthropic Claude API client
+│   │   │   ├── claude.ts              # Anthropic Claude API client (claudeExtractFromPDF, streaming)
 │   │   │   ├── ollama.ts              # Local Ollama LLM client
 │   │   │   ├── embeddings.ts          # OpenAI text-embedding-3-small + pgvector search
 │   │   │   └── scheduler.ts           # node-cron background jobs
@@ -149,7 +155,13 @@ Monsoon Health/
 │       ├── seed.sql                   # Initial data: site, signal types, fail reasons
 │       ├── init.js                    # pg Pool + Supabase client initialization
 │       └── migrations/
-│           └── 001_ai_fields.sql      # AI ingestion fields + patient_protocol_signals table
+│           ├── 001_ai_fields.sql      # AI ingestion fields + patient_protocol_signals table
+│           ├── 002_enable_rls.sql     # Row-level security policies
+│           ├── 003_intake_submissions.sql  # Patient intake forms
+│           ├── 004_structured_clinical_data.sql  # Unified patient clinical profile
+│           ├── 005_freeform_signal_rules.sql  # Flexible signal rule definitions
+│           ├── 006_visit_templates_source.sql  # Visit template source tracking
+│           └── 007_signal_visit_enhancements.sql  # Signal/visit enhancements
 │
 ├── docs/
 │   ├── PROJECT_DOCUMENTATION.md       # ← This file
@@ -180,7 +192,7 @@ Monsoon Health/
 | **AI — Embeddings** | OpenAI `text-embedding-3-small` | Document chunking & semantic search |
 | **Email** | Resend + React Email | Transactional emails (waitlist, contact, notifications) |
 | **Background Jobs** | node-cron | Revisit scanning, visit reminders, notification dispatch |
-| **PDF Parsing** | pdf-parse | Extract text from uploaded protocol/patient PDFs |
+| **PDF Parsing** | pdf-parse | Extract text from patient documents (protocols use native PDF via Anthropic document blocks) |
 | **Excel Import** | xlsx | Bulk patient import from spreadsheets |
 
 ---
@@ -210,7 +222,14 @@ cd monsoon-health
 2. Go to **SQL Editor** in your Supabase dashboard
 3. Run `server/db/schema.sql` — creates all 18 core tables
 4. Run `server/db/seed.sql` — seeds site-001, signal types, screen fail reasons
-5. Run `server/db/migrations/001_ai_fields.sql` — adds AI extraction fields + patient_protocol_signals table
+5. Run all migration files in order from `server/db/migrations/`:
+   - `001_ai_fields.sql` — AI extraction fields + patient_protocol_signals
+   - `002_enable_rls.sql` — Row-level security policies
+   - `003_intake_submissions.sql` — Patient intake forms
+   - `004_structured_clinical_data.sql` — Unified patient clinical profile
+   - `005_freeform_signal_rules.sql` — Flexible signal rule definitions
+   - `006_visit_templates_source.sql` — Visit template source tracking
+   - `007_signal_visit_enhancements.sql` — Signal/visit enhancements
 6. (Optional) Enable the `vector` extension for embedding search:
    ```sql
    CREATE EXTENSION IF NOT EXISTS vector;
@@ -336,7 +355,7 @@ npm run dev
 
 ## Database Schema
 
-### Overview — 19 Tables (Supabase PostgreSQL)
+### Overview — 20+ Tables (Supabase PostgreSQL)
 
 The schema is fully normalized with foreign key constraints. Every table includes `site_id` for multi-tenant scoping.
 
@@ -402,7 +421,7 @@ NEW → IN_REVIEW → PENDING_INFO → LIKELY_ELIGIBLE → ENROLLED
 |-------|---------|-------------|
 | `signal_types` | Signal definitions (e.g. "FibroScan") | `name`, `label`, `value_type` (NUMBER/STRING/ENUM), `unit` |
 | `patient_signals` | Time-series signal values | `patient_id`, `signal_type_id`, `value_number`, `collected_at` |
-| `trial_signal_rules` | Auto-match thresholds per trial | `trial_id`, `signal_type_id`, `operator` (GTE/LTE/EQ/IN), `threshold_number` |
+| `trial_signal_rules` | Auto-match thresholds per trial | `trial_id`, `signal_type_id`, `operator` (GTE/LTE/EQ/IN/BETWEEN/TEXT_MATCH), `threshold_number` |
 
 ### Visits
 
@@ -416,7 +435,8 @@ NEW → IN_REVIEW → PENDING_INFO → LIKELY_ELIGIBLE → ENROLLED
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
 | `trial_protocols` | Uploaded protocol PDFs | `trial_id`, `filename`, `storage_path` (Supabase Storage) |
-| `patient_documents` | Patient files (labs, imaging) | `patient_id`, `document_type`, `storage_path`, `raw_extracted_data` (AI-extracted JSON) |
+| `patient_documents` | Patient files (labs, imaging) | `patient_id`, `document_type`, `storage_path`, `structured_data` (AI-extracted JSONB) |
+| `patient_clinical_data` | **Unified patient profile** — merged from all documents | `patient_id`, `diagnoses`, `medications`, `labs_latest`, `labs_timeline`, `vitals_latest`, `vitals_timeline` |
 
 ### AI / Matching
 
@@ -615,49 +635,44 @@ All routes are prefixed with `/api`. Protected routes require a Bearer token.
 
 The platform has **three AI capabilities**, each using different models optimized for cost / quality / speed trade-offs.
 
-### 1. Protocol Ingestion (Claude)
+### 1. Protocol Ingestion (Claude Sonnet 4.6)
 
-When a user uploads a protocol PDF to a trial:
+When a user uploads a protocol PDF to a trial, the system reads the **native PDF directly via Anthropic document blocks** (not pdf-parse text extraction):
 
 ```mermaid
 flowchart LR
-    A[PDF Upload] --> B[pdf-parse: extract text]
-    B --> C[cleanPdfText: fix line breaks, page numbers]
-    C --> D1[Claude Haiku: extract metadata<br/>title, sponsor, phase, criteria JSON]
-    C --> D2[Claude Haiku: extract eligibility criteria<br/>clean, numbered, HTML-formatted]
-    C --> D3[Claude Sonnet: extract visit schedule<br/>Schedule of Assessments table]
-    C --> D4[Claude Haiku: extract signal rules<br/>max 6 key screening filters]
-    D1 --> E[Store in trials table]
-    D2 --> E
-    D3 --> F[Create visit_templates rows]
-    D4 --> G[Create trial_signal_rules + signal_types rows]
+    A[PDF Upload to Supabase Storage] --> B[claudeExtractFromPDF:<br/>Pass 1 — metadata]
+    A --> C[claudeExtractFromPDF:<br/>Pass 2 — eligibility + visits + signal rules]
+    B --> D[Store structured_data JSONB in trial_protocols]
+    C --> D
+    C --> E[Create visit_templates rows]
+    C --> F[Create trial_signal_rules rows<br/>max 6 key screening filters]
 ```
 
 **Key implementation details:**
-- `aiIngestion.ts` — main extraction pipelines
-- `cleanPdfText()` — removes embedded line/page numbers, re-joins split sentences
-- `findCriteriaSection()` — searches for eligibility section headers in the PDF text
-- `findVisitScheduleSection()` — searches for Schedule of Assessments headers
-- `criteriaToHtml()` — converts plain-text criteria to structured HTML with `<ol>`, `<ul>`, boldened thresholds
-- Visit schedule extraction uses **Claude Sonnet 4.6** for higher quality on complex tables
-- Signal rules are limited to **max 6** clinically important screening filters
-- Eligibility extraction runs a **dedicated second pass** for cleaner output
+- `aiIngestion.ts` — main extraction pipeline
+- `claudeExtractFromPDF()` — reads PDF via Anthropic document blocks (native PDF, no text stripping)
+- All Claude calls use `client.messages.stream()` (streaming required — no non-streaming calls)
+- Signal rules capped at **max 6** clinically important screening filters
+- JSON recovery: graceful fallback patterns for partial JSON responses
+- **Two extraction passes** for quality: Pass 1 = metadata; Pass 2 = eligibility criteria + visit schedule + signal rules
 
-### 2. Patient Document Extraction (Claude)
+> **Note:** The old `pdf-parse` text approach (cleanPdfText, splitProtocolSections, findSection, sliceSection) was removed. Protocol ingestion now sends the raw PDF as a document block to Claude, which reads the PDF natively.
+
+### 2. Patient Document Extraction (Claude Haiku 4.5)
 
 When a user uploads a patient document:
 
 ```mermaid
 flowchart LR
-    A[Document Upload] --> B[pdf-parse]
-    B --> C[cleanPdfText]
-    C --> D[Claude Haiku: extract patient data]
-    D --> E[Store raw_extracted_data JSON in patient_documents]
+    A[Document Upload] --> B[Claude Haiku: extract structured data<br/>via document blocks]
+    B --> C[Store structured_data JSONB in patient_documents]
+    C --> D[Merge into patient_clinical_data<br/>labs/vitals/imaging timelines]
 ```
 
-Extracted fields include: demographics, diagnoses, medications, labs, vitals, imaging, FibroScan, smoking/alcohol status, family history, and more.
+Extracted fields: demographics, diagnoses, medications, allergies, family history, labs (with HIGH/LOW/CRITICAL flags), vitals, imaging, FibroScan, smoking/alcohol status, clinical notes.
 
-### 3. Patient-Protocol Matching (Ollama)
+### 3. Patient-Protocol Matching (Claude Haiku 4.5)
 
 Evaluates all site patients against a trial's extracted criteria:
 
@@ -666,7 +681,7 @@ flowchart LR
     A[User triggers matching] --> B[Load trial criteria JSON]
     B --> C[For each patient...]
     C --> D[Build patient bundle:<br/>demographics + signals + extracted docs]
-    D --> E[Ollama/Qwen 3.5: evaluate eligibility]
+    D --> E[Claude Haiku: evaluate eligibility]
     E --> F[Store result in patient_protocol_signals]
     F --> G{LIKELY_ELIGIBLE or BORDERLINE?}
     G -->|Yes| H[Auto-create screening_case]
@@ -690,7 +705,7 @@ For semantic search across protocol and patient documents:
 When a new patient signal is recorded, `alertEngine.ts` automatically:
 
 1. Finds all active `trial_signal_rules` for that signal type
-2. Evaluates if the value meets the threshold (GTE, LTE, EQ, IN)
+2. Evaluates if the value meets the threshold (GTE, LTE, EQ, IN, BETWEEN, TEXT_MATCH)
 3. Checks if a screening case already exists for the patient ↔ trial
 4. Creates a `THRESHOLD_CROSSED` notification event (deduplicated per day)
 
@@ -730,12 +745,15 @@ Each notification has a `dedup_key` (unique per `site_id`). Duplicate key insert
 | `/screening` | `ScreeningCasesPage` | Yes | Screening case list |
 | `/screening/:id` | `ScreeningCaseDetailPage` | Yes | Screening case workflow |
 | `/notes` | `NotesPage` | Yes | Personal notes |
+| `/intake/:token` | `IntakeFormPage` | No | Patient intake form (multi-section) |
+| `/intake-submissions` | `IntakeSubmissionsPage` | Yes | Submitted intake forms |
 
 ### Component Hierarchy
 
 ```
 App (ThemeProvider → ClerkProvider → AuthProvider → ToastProvider)
 ├── LoginPage / SignUpPage (public)
+├── IntakeFormPage (public — token-gated)
 └── ProtectedRoute
     └── Layout (sidebar, header, user button, theme toggle, floating note)
         ├── DashboardPage
@@ -745,7 +763,8 @@ App (ThemeProvider → ClerkProvider → AuthProvider → ToastProvider)
         ├── TrialDetailPage
         ├── ScreeningCasesPage
         ├── ScreeningCaseDetailPage
-        └── NotesPage
+        ├── NotesPage
+        └── IntakeSubmissionsPage
 ```
 
 ### Theming System
@@ -899,11 +918,11 @@ The scheduler generates email content for these notification types (via `generat
 
 1. Define system prompt and extraction prompt in `server/src/services/aiIngestion.ts`
 2. Choose the right model:
-   - **Claude Haiku 4.5** — fast, cheap, good for structured extraction
-   - **Claude Sonnet 4.6** — best quality, use for complex tables/documents
-   - **Ollama** — local, free, good for matching/evaluation tasks
-3. Use `claudeExtract<T>()` for JSON extraction or `claudeChat()` for text
-4. Handle JSON parse failures gracefully (see `recoverPartialVisitArray()` pattern)
+   - **Claude Haiku 4.5** — fast, cheap, good for structured extraction and patient matching
+   - **Claude Sonnet 4.6** — best quality, use for complex PDF protocols and multi-pass extraction
+3. Use `claudeExtractFromPDF()` for PDF document extraction (sends native PDF via document blocks)
+4. All Claude calls **must use** `client.messages.stream()` — non-streaming calls are not used
+5. Handle JSON parse failures gracefully with fallback recovery patterns
 
 ---
 
@@ -959,7 +978,7 @@ The scheduler generates email content for these notification types (via `generat
 | `401 Unauthorized` on all requests | Expired or missing Clerk token | Clear `monsoon_clerk_token` from localStorage, re-login |
 | `CORS error` in console | Dev server not proxying | Ensure `platform/vite.config.ts` proxy is pointing to `localhost:3001` |
 | AI ingestion hangs | Ollama not running or wrong model | Run `ollama serve` and `ollama pull qwen3.5` |
-| Protocol upload returns empty criteria | PDF text extraction failed | Check PDF is text-based (not scanned image). `pdf-parse` only handles text PDFs. |
+| Protocol upload returns empty criteria | Claude extraction failed | Check `ANTHROPIC_API_KEY` is set. Protocol ingestion uses native PDF via Anthropic document blocks — ensure the PDF is a valid, readable file. |
 | `relation "xyz" does not exist` | Missing migration | Run all migration files in `server/db/migrations/` in Supabase SQL Editor |
 | User auto-provisioned to wrong site | Default behavior | New users are auto-assigned to `site-001`. Update in `middleware/auth.ts` if needed. |
 | Email not sending | Missing Resend API key | Set `RESEND_API_KEY` in `server/.env` |

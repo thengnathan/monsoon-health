@@ -2,10 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
+import { useSiteConfig } from '../contexts/SiteConfigContext';
 import { StatusBadge, formatDate } from '../utils';
+import PDFViewerModal from '../components/PDFViewerModal';
 import type {
     PatientDetail, PatientClinicalData, SignalType, Trial,
     LabValue, VitalValue, ImagingResult, ClinicalDiagnosis,
+    ProtocolSignal, SignalRuleAlignment, UploadResult,
 } from '../types';
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -54,9 +57,7 @@ function SectionHeader({ title, count }: { title: string; count?: number }) {
 function LabsSection({ latest, timeline }: { latest: Record<string, LabValue>; timeline: LabValue[] }) {
     const [showTimeline, setShowTimeline] = useState(false);
     const entries = Object.entries(latest).sort(([a], [b]) => a.localeCompare(b));
-
     if (entries.length === 0) return <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-2) 0' }}>No lab values extracted yet.</div>;
-
     return (
         <div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-sm)' }}>
@@ -75,11 +76,7 @@ function LabsSection({ latest, timeline }: { latest: Record<string, LabValue>; t
                 </tbody>
             </table>
             {timeline.length > entries.length && (
-                <button
-                    className="btn btn-sm btn-ghost"
-                    style={{ marginTop: 'var(--space-2)', fontSize: 'var(--font-xs)' }}
-                    onClick={() => setShowTimeline(v => !v)}
-                >
+                <button className="btn btn-sm btn-ghost" style={{ marginTop: 'var(--space-2)', fontSize: 'var(--font-xs)' }} onClick={() => setShowTimeline(v => !v)}>
                     {showTimeline ? '▲ Hide timeline' : `▼ Show timeline (${timeline.length} values)`}
                 </button>
             )}
@@ -116,7 +113,6 @@ function LabsSection({ latest, timeline }: { latest: Record<string, LabValue>; t
 function VitalsSection({ latest }: { latest: Record<string, VitalValue> }) {
     const entries = Object.entries(latest);
     if (entries.length === 0) return <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-2) 0' }}>No vitals extracted yet.</div>;
-
     return (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 'var(--space-2)' }}>
             {entries.map(([name, v]) => (
@@ -137,7 +133,6 @@ function ImagingSection({ latest, timeline }: { latest: Record<string, ImagingRe
     const [showTimeline, setShowTimeline] = useState(false);
     const entries = Object.entries(latest);
     if (entries.length === 0) return <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-2) 0' }}>No imaging results extracted yet.</div>;
-
     return (
         <div>
             {entries.map(([type, img]) => (
@@ -208,24 +203,258 @@ function DiagnosesSection({ diagnoses }: { diagnoses: ClinicalDiagnosis[] }) {
     );
 }
 
+// ── Match History ─────────────────────────────────────────────────────────────
+
+function MatchHistorySection({ signals }: { signals: ProtocolSignal[] }) {
+    const [expanded, setExpanded] = useState<string | null>(null);
+
+    if (signals.length === 0) {
+        return <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-2) 0' }}>No AI matching has been run yet.</div>;
+    }
+
+    const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
+        LIKELY_ELIGIBLE:   { bg: '#d4edda', text: '#155724', label: 'Likely Eligible' },
+        BORDERLINE:        { bg: '#fff3cd', text: '#856404', label: 'Borderline' },
+        LIKELY_INELIGIBLE: { bg: '#f8d7da', text: '#721c24', label: 'Likely Ineligible' },
+    };
+    const CONFIDENCE_COLOR: Record<string, string> = { HIGH: '#155724', MEDIUM: '#856404', LOW: '#6c757d' };
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            {signals.map(sig => {
+                const sc = STATUS_STYLE[sig.overall_status] || STATUS_STYLE.BORDERLINE;
+                const isExpanded = expanded === sig.id;
+                return (
+                    <div key={sig.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                        <div
+                            style={{ padding: 'var(--space-3)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}
+                            onClick={() => setExpanded(isExpanded ? null : sig.id)}
+                        >
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontWeight: 600, fontSize: 'var(--font-sm)', marginBottom: 4 }}>{sig.trial_name}</div>
+                                {sig.protocol_number && <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', marginBottom: 6 }}>{sig.protocol_number}</div>}
+                                <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)' }}>{sig.summary}</div>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 'var(--space-3)', flexShrink: 0 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 10, background: sc.bg, color: sc.text }}>{sc.label}</span>
+                                <span style={{ fontSize: 10, color: CONFIDENCE_COLOR[sig.confidence] || '#6c757d' }}>{sig.confidence} confidence</span>
+                                <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{formatDate(sig.last_evaluated_at)}</span>
+                            </div>
+                        </div>
+                        {isExpanded && (
+                            <div style={{ borderTop: '1px solid var(--border)', padding: 'var(--space-3)', background: 'var(--bg-secondary)' }}>
+                                {sig.missing_data.length > 0 && (
+                                    <div style={{ marginBottom: 'var(--space-3)', padding: 'var(--space-2) var(--space-3)', background: '#fff3cd', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-xs)', color: '#856404' }}>
+                                        <strong>Missing data:</strong> {sig.missing_data.join(', ')}
+                                    </div>
+                                )}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {sig.criteria_breakdown.map((c, i) => (
+                                        <div key={i} style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-start', fontSize: 'var(--font-xs)' }}>
+                                            <span style={{ flexShrink: 0, fontWeight: 700, color: c.status === 'PASS' ? '#155724' : c.status === 'FAIL' ? '#721c24' : '#6c757d' }}>
+                                                {c.status === 'PASS' ? '✓' : c.status === 'FAIL' ? '✗' : '?'}
+                                            </span>
+                                            <div>
+                                                <span style={{ color: 'var(--text-tertiary)' }}>[{c.type}]</span>{' '}
+                                                <span style={{ color: 'var(--text-primary)' }}>{c.criterion}</span>
+                                                {c.reason && <div style={{ color: 'var(--text-tertiary)', marginTop: 2, fontStyle: 'italic' }}>{c.reason}</div>}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ── Signal-Rule Alignment ─────────────────────────────────────────────────────
+
+function SignalAlignmentSection({ alignment }: { alignment: SignalRuleAlignment[] }) {
+    if (alignment.length === 0) {
+        return <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-2) 0' }}>No active trial signal rules found.</div>;
+    }
+
+    const byTrial = alignment.reduce<Record<string, { name: string; protocol_number: string | null; rules: SignalRuleAlignment[] }>>((acc, item) => {
+        if (!acc[item.trial_id]) acc[item.trial_id] = { name: item.trial_name, protocol_number: item.protocol_number, rules: [] };
+        acc[item.trial_id].rules.push(item);
+        return acc;
+    }, {});
+
+    const formatThreshold = (r: SignalRuleAlignment): string => {
+        const u = r.unit ? ` ${r.unit}` : '';
+        switch (r.operator) {
+            case 'GTE': return `≥ ${r.threshold_number}${u}`;
+            case 'LTE': return `≤ ${r.threshold_number}${u}`;
+            case 'EQ':  return `= ${r.threshold_number ?? r.threshold_text}${u}`;
+            case 'BETWEEN': return `${r.min_value}–${r.max_value}${u}`;
+            case 'IN': { try { return `in [${(JSON.parse(r.threshold_list || '[]') as string[]).join(', ')}]`; } catch { return r.threshold_list || '—'; } }
+            default: return r.threshold_text || '—';
+        }
+    };
+
+    const formatPatientValue = (r: SignalRuleAlignment): string => {
+        const val = r.patient_value_number ?? r.patient_value_enum ?? r.patient_value_text;
+        if (val === null || val === undefined) return '—';
+        return `${val}${r.unit ? ` ${r.unit}` : ''}`;
+    };
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+            {Object.entries(byTrial).map(([trialId, trial]) => {
+                const pass = trial.rules.filter(r => r.passes === true).length;
+                const fail = trial.rules.filter(r => r.passes === false).length;
+                const nodata = trial.rules.filter(r => r.passes === null).length;
+                return (
+                    <div key={trialId}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
+                            <div>
+                                <span style={{ fontWeight: 600, fontSize: 'var(--font-sm)' }}>{trial.name}</span>
+                                {trial.protocol_number && <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', marginLeft: 8 }}>{trial.protocol_number}</span>}
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, fontSize: 11 }}>
+                                {pass > 0 && <span style={{ color: '#155724', fontWeight: 600 }}>{pass} pass</span>}
+                                {fail > 0 && <span style={{ color: '#721c24', fontWeight: 600 }}>{fail} fail</span>}
+                                {nodata > 0 && <span style={{ color: 'var(--text-tertiary)' }}>{nodata} no data</span>}
+                            </div>
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-xs)' }}>
+                            <thead>
+                                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                                    <th style={{ textAlign: 'left', padding: '4px 6px', color: 'var(--text-tertiary)', fontWeight: 600 }}>Signal</th>
+                                    <th style={{ textAlign: 'left', padding: '4px 6px', color: 'var(--text-tertiary)', fontWeight: 600 }}>Rule</th>
+                                    <th style={{ textAlign: 'right', padding: '4px 6px', color: 'var(--text-tertiary)', fontWeight: 600 }}>Patient Value</th>
+                                    <th style={{ width: 24, padding: '4px 6px' }}></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {trial.rules.map(rule => (
+                                    <tr key={rule.rule_id} style={{ borderBottom: '1px solid var(--border-light, var(--border))' }}>
+                                        <td style={{ padding: '6px', fontWeight: 500 }}>{rule.signal_label}</td>
+                                        <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{formatThreshold(rule)}</td>
+                                        <td style={{ padding: '6px', textAlign: 'right', fontWeight: rule.passes !== null ? 600 : 400, color: rule.passes === true ? '#155724' : rule.passes === false ? '#721c24' : 'var(--text-tertiary)' }}>
+                                            {formatPatientValue(rule)}
+                                            {rule.patient_signal_date && <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 4 }}>({formatDate(rule.patient_signal_date)})</span>}
+                                        </td>
+                                        <td style={{ padding: '6px', textAlign: 'center', fontSize: 13, fontWeight: 700 }}>
+                                            {rule.passes === true && <span style={{ color: '#155724' }}>✓</span>}
+                                            {rule.passes === false && <span style={{ color: '#721c24' }}>✗</span>}
+                                            {rule.passes === null && <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ── Extraction Review Modal ───────────────────────────────────────────────────
+
+function ExtractionReviewModal({ result, onMatch, matching, onClose }: {
+    result: UploadResult; onMatch: () => void; matching: boolean; onClose: () => void;
+}) {
+    const s = result.extraction_summary;
+    const counts = s ? [
+        { label: 'conditions', val: s.diagnoses_count },
+        { label: 'medications', val: s.medications_count },
+        { label: 'labs', val: s.labs_count },
+        { label: 'vitals', val: s.vitals_count },
+        { label: 'imaging', val: s.imaging_count },
+    ].filter(c => c.val > 0) : [];
+
+    return (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+            <div className="modal">
+                <div className="modal-header">
+                    <h3 className="modal-title">Extraction Complete</h3>
+                    <button className="modal-close" onClick={onClose}>✕</button>
+                </div>
+
+                {counts.length > 0 && (
+                    <div style={{ display: 'flex', gap: 'var(--space-4)', marginBottom: 'var(--space-4)', flexWrap: 'wrap' }}>
+                        {counts.map(c => (
+                            <div key={c.label} style={{ textAlign: 'center' }}>
+                                <div style={{ fontWeight: 700, fontSize: 'var(--font-xl, 1.25rem)' }}>{c.val}</div>
+                                <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)' }}>{c.label}</div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {s?.key_labs && s.key_labs.length > 0 && (
+                    <div style={{ marginBottom: 'var(--space-4)' }}>
+                        <div style={{ fontSize: 'var(--font-xs)', fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 'var(--space-2)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Key Values</div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-sm)' }}>
+                            <tbody>
+                                {s.key_labs.map((lab, i) => (
+                                    <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                                        <td style={{ padding: '5px 0', fontWeight: 500 }}>{lab.name}</td>
+                                        <td style={{ padding: '5px 0', textAlign: 'right', fontWeight: 600 }}>
+                                            {String(lab.value)}
+                                            {lab.unit && <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 4, fontSize: 11 }}>{lab.unit}</span>}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {result.signals_created?.length > 0 && (
+                    <div style={{ marginBottom: 'var(--space-3)', fontSize: 'var(--font-xs)', color: 'var(--text-secondary)' }}>
+                        Signals recorded: {result.signals_created.join(', ')}
+                    </div>
+                )}
+
+                <div style={{ padding: 'var(--space-3)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-4)' }}>
+                    Run AI matching to check this patient against all active trials with extracted eligibility criteria.
+                </div>
+
+                <div className="modal-actions">
+                    <button className="btn btn-secondary" onClick={onClose}>Close</button>
+                    <button className="btn btn-primary" onClick={onMatch} disabled={matching}>
+                        {matching ? 'Matching…' : 'Match Against Active Trials'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 interface SigForm { signal_type_id: string; value: string; collected_at: string; source: string; }
 interface CaseForm { trial_id: string; status: string; }
 
+type Tab = 'clinical' | 'trials' | 'documents';
+
 export default function PatientDetailPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { addToast } = useToast();
+    const { isSectionVisible } = useSiteConfig();
 
     const [patient, setPatient] = useState<PatientDetail | null>(null);
     const [clinicalData, setClinicalData] = useState<PatientClinicalData | null>(null);
+    const [protocolSignals, setProtocolSignals] = useState<ProtocolSignal[]>([]);
+    const [signalAlignment, setSignalAlignment] = useState<SignalRuleAlignment[]>([]);
     const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState<Tab>('clinical');
     const [showSignalModal, setShowSignalModal] = useState(false);
     const [showCaseModal, setShowCaseModal] = useState(false);
     const [signalTypes, setSignalTypes] = useState<SignalType[]>([]);
     const [trials, setTrials] = useState<Trial[]>([]);
     const [uploading, setUploading] = useState(false);
+    const [matching, setMatching] = useState(false);
+    const [extractionReview, setExtractionReview] = useState<UploadResult | null>(null);
+    const [pdfViewer, setPdfViewer] = useState<{ url: string; filename: string } | null>(null);
     const docFileRef = useRef<HTMLInputElement>(null);
 
     const [sigForm, setSigForm] = useState<SigForm>({
@@ -237,6 +466,8 @@ export default function PatientDetailPage() {
         if (!id) return;
         api.getPatient(id).then(setPatient).catch(console.error);
         api.getPatientClinicalData(id).then(setClinicalData).catch(() => setClinicalData(null));
+        api.getPatientProtocolSignals(id).then(setProtocolSignals).catch(() => {});
+        api.getSignalRuleAlignment(id).then(setSignalAlignment).catch(() => {});
     };
 
     useEffect(() => {
@@ -247,6 +478,8 @@ export default function PatientDetailPage() {
             api.getPatientClinicalData(id).then(setClinicalData).catch(() => setClinicalData(null)),
             api.getSignalTypes().then(setSignalTypes).catch(() => {}),
             api.getTrials({ status: 'ACTIVE' }).then(setTrials).catch(() => {}),
+            api.getPatientProtocolSignals(id).then(setProtocolSignals).catch(() => {}),
+            api.getSignalRuleAlignment(id).then(setSignalAlignment).catch(() => {}),
         ]).finally(() => setLoading(false));
     }, [id]);
 
@@ -276,8 +509,9 @@ export default function PatientDetailPage() {
         if (!file) return;
         setUploading(true);
         try {
-            await api.uploadPatientDocument(file, { patient_id: id });
-            addToast('Document uploaded and clinical data updated', 'success');
+            const result = await api.uploadPatientDocument(file, { patient_id: id });
+            addToast('Document uploaded — data extracted', 'success');
+            setExtractionReview(result);
             loadPatient();
         } catch (err) {
             addToast((err as Error).message, 'error');
@@ -286,13 +520,38 @@ export default function PatientDetailPage() {
         if (docFileRef.current) docFileRef.current.value = '';
     };
 
+    const handleMatchNow = async () => {
+        setMatching(true);
+        try {
+            const result = await api.matchPatient(id!);
+            const eligible = result.results.filter(r => r.overall_status === 'LIKELY_ELIGIBLE').length;
+            const borderline = result.results.filter(r => r.overall_status === 'BORDERLINE').length;
+            if (result.matched === 0) {
+                addToast('No active trials with extracted criteria to match against.', 'info');
+            } else {
+                addToast(`Matched ${result.matched} trial(s): ${eligible} likely eligible, ${borderline} borderline`, eligible > 0 ? 'success' : 'info');
+            }
+            setExtractionReview(null);
+            loadPatient();
+            if (eligible > 0 || borderline > 0) setActiveTab('trials');
+        } catch (err) {
+            addToast((err as Error).message, 'error');
+        }
+        setMatching(false);
+    };
+
     if (loading) return <div className="loading-spinner"><div className="spinner" /></div>;
     if (!patient) return <div className="empty-state"><h3>Patient not found</h3></div>;
 
-    // Compute age
     const age = patient.dob
         ? Math.floor((Date.now() - new Date(patient.dob).getTime()) / (1000 * 60 * 60 * 24 * 365.25))
         : null;
+
+    const TAB_LABELS: Record<Tab, string> = {
+        clinical: 'Clinical',
+        trials: `Trials${protocolSignals.length > 0 ? ` (${protocolSignals.length})` : ''}`,
+        documents: `Documents${patient.documents?.length ? ` (${(patient.documents as unknown[]).length})` : ''}`,
+    };
 
     return (
         <div>
@@ -320,77 +579,92 @@ export default function PatientDetailPage() {
                 </div>
             </div>
 
-            {/* Body */}
-            <div className="detail-grid" style={{ gridTemplateColumns: '3fr 2fr' }}>
-                {/* Left: Clinical Data */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                    {/* Conditions */}
-                    <div className="detail-section">
-                        <SectionHeader title="Conditions & Diagnoses" count={clinicalData?.diagnoses.length} />
-                        {clinicalData
-                            ? <DiagnosesSection diagnoses={clinicalData.diagnoses} />
-                            : <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-2) 0' }}>Upload a patient document to extract clinical data.</div>
-                        }
-                    </div>
+            {/* Tab Bar */}
+            <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 'var(--space-5)' }}>
+                {(['clinical', 'trials', 'documents'] as Tab[]).map(tab => (
+                    <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        style={{
+                            padding: '10px 18px',
+                            border: 'none',
+                            background: 'none',
+                            cursor: 'pointer',
+                            fontSize: 'var(--font-sm)',
+                            fontWeight: activeTab === tab ? 600 : 400,
+                            color: activeTab === tab ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                            borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
+                            marginBottom: -1,
+                        }}
+                    >
+                        {TAB_LABELS[tab]}
+                    </button>
+                ))}
+            </div>
 
-                    {/* Medications */}
-                    {clinicalData && clinicalData.medications.length > 0 && (
+            {/* ── Clinical Tab ── */}
+            {activeTab === 'clinical' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', maxWidth: "100%" }}>
+                    {isSectionVisible('diagnoses') && (
+                        <div className="detail-section">
+                            <SectionHeader title="Conditions & Diagnoses" count={clinicalData?.diagnoses.length} />
+                            {clinicalData
+                                ? <DiagnosesSection diagnoses={clinicalData.diagnoses} />
+                                : <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>Upload a patient document to extract clinical data.</div>
+                            }
+                        </div>
+                    )}
+
+                    {isSectionVisible('medications') && clinicalData && clinicalData.medications.length > 0 && (
                         <div className="detail-section">
                             <SectionHeader title="Medications" count={clinicalData.medications.length} />
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                 {clinicalData.medications.map((m, i) => (
                                     <div key={i} style={{ fontSize: 'var(--font-sm)', padding: '4px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}>
                                         <span style={{ fontWeight: 500 }}>{m.name}</span>
-                                        <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)' }}>
-                                            {[m.dose, m.frequency].filter(Boolean).join(' · ')}
-                                        </span>
+                                        <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)' }}>{[m.dose, m.frequency].filter(Boolean).join(' · ')}</span>
                                     </div>
                                 ))}
                             </div>
                         </div>
                     )}
 
-                    {/* Allergies */}
-                    {clinicalData && clinicalData.allergies.length > 0 && (
+                    {isSectionVisible('medications') && clinicalData && clinicalData.allergies.length > 0 && (
                         <div className="detail-section">
                             <SectionHeader title="Allergies" />
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
                                 {clinicalData.allergies.map((a, i) => (
-                                    <span key={i} style={{ fontSize: 'var(--font-xs)', padding: '3px 10px', borderRadius: 12, background: '#f8d7da', color: '#721c24', fontWeight: 500 }}>
-                                        {a}
-                                    </span>
+                                    <span key={i} style={{ fontSize: 'var(--font-xs)', padding: '3px 10px', borderRadius: 12, background: '#f8d7da', color: '#721c24', fontWeight: 500 }}>{a}</span>
                                 ))}
                             </div>
                         </div>
                     )}
 
-                    {/* Labs */}
-                    <div className="detail-section">
-                        <SectionHeader title="Labs" count={clinicalData ? Object.keys(clinicalData.labs_latest).length : undefined} />
-                        {clinicalData
-                            ? <LabsSection latest={clinicalData.labs_latest} timeline={clinicalData.labs_timeline} />
-                            : <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-2) 0' }}>No lab data yet.</div>
-                        }
-                    </div>
+                    {isSectionVisible('labs') && (
+                        <div className="detail-section">
+                            <SectionHeader title="Labs" count={clinicalData ? Object.keys(clinicalData.labs_latest).length : undefined} />
+                            {clinicalData
+                                ? <LabsSection latest={clinicalData.labs_latest} timeline={clinicalData.labs_timeline} />
+                                : <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No lab data yet.</div>
+                            }
+                        </div>
+                    )}
 
-                    {/* Vitals */}
-                    {clinicalData && Object.keys(clinicalData.vitals_latest).length > 0 && (
+                    {isSectionVisible('vitals') && clinicalData && Object.keys(clinicalData.vitals_latest).length > 0 && (
                         <div className="detail-section">
                             <SectionHeader title="Vitals" />
                             <VitalsSection latest={clinicalData.vitals_latest} />
                         </div>
                     )}
 
-                    {/* Imaging */}
-                    {(clinicalData && Object.keys(clinicalData.imaging_latest).length > 0) && (
+                    {isSectionVisible('imaging') && clinicalData && Object.keys(clinicalData.imaging_latest).length > 0 && (
                         <div className="detail-section">
                             <SectionHeader title="Imaging" count={Object.keys(clinicalData.imaging_latest).length} />
                             <ImagingSection latest={clinicalData.imaging_latest} timeline={clinicalData.imaging_timeline} />
                         </div>
                     )}
 
-                    {/* Lifestyle */}
-                    {clinicalData && (clinicalData.smoking_status || clinicalData.alcohol_use) && (
+                    {isSectionVisible('lifestyle') && clinicalData && (clinicalData.smoking_status || clinicalData.alcohol_use) && (
                         <div className="detail-section">
                             <SectionHeader title="Lifestyle" />
                             <div style={{ display: 'flex', gap: 'var(--space-4)', fontSize: 'var(--font-sm)' }}>
@@ -400,8 +674,7 @@ export default function PatientDetailPage() {
                         </div>
                     )}
 
-                    {/* Family History */}
-                    {clinicalData && clinicalData.family_history.length > 0 && (
+                    {isSectionVisible('family_history') && clinicalData && clinicalData.family_history.length > 0 && (
                         <div className="detail-section">
                             <SectionHeader title="Family History" />
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -411,73 +684,8 @@ export default function PatientDetailPage() {
                             </div>
                         </div>
                     )}
-                </div>
 
-                {/* Right: Screening, Documents, Signals */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                    {/* Screening Cases */}
-                    <div className="detail-section">
-                        <SectionHeader title="Screening Cases" count={patient.screening_cases?.length} />
-                        {(!patient.screening_cases || patient.screening_cases.length === 0) ? (
-                            <div className="empty-state" style={{ padding: 'var(--space-4)' }}>
-                                <p>No screening cases yet.</p>
-                            </div>
-                        ) : (
-                            patient.screening_cases.map(sc => (
-                                <div key={sc.id} className="alert-card" onClick={() => navigate(`/screening/${sc.id}`)} style={{ cursor: 'pointer' }}>
-                                    <div className="alert-content">
-                                        <div className="alert-title">{sc.trial_name}</div>
-                                        <div className="alert-meta">
-                                            {sc.protocol_number && `${sc.protocol_number} · `}
-                                            <StatusBadge status={sc.status} />
-                                            {sc.assigned_user_name && ` · ${sc.assigned_user_name}`}
-                                        </div>
-                                        {sc.revisit_date && (
-                                            <div className="alert-meta" style={{ marginTop: 2 }}>Revisit: {formatDate(sc.revisit_date)}</div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-
-                    {/* Documents */}
-                    <div className="detail-section">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div className="detail-section-title" style={{ marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>Documents</div>
-                            <button className="btn btn-sm btn-secondary" onClick={() => docFileRef.current?.click()} disabled={uploading}>
-                                + Upload
-                            </button>
-                        </div>
-                        <div style={{ marginTop: 'var(--space-3)' }}>
-                            {(!patient.documents || (patient.documents as { id: string }[]).length === 0) ? (
-                                <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-2) 0' }}>
-                                    No documents uploaded yet.
-                                </div>
-                            ) : (
-                                (patient.documents as { id: string; filename: string; document_type: string; created_at: string }[]).map(doc => (
-                                    <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 'var(--font-sm)' }}>
-                                        <span style={{ fontSize: 16 }}>📄</span>
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.filename}</div>
-                                            <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)' }}>{doc.document_type} · {formatDate(doc.created_at)}</div>
-                                        </div>
-                                        <a
-                                            href={api.getDocumentUrl(patient.id, doc.id)}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            style={{ color: 'var(--accent)', fontSize: 'var(--font-xs)', textDecoration: 'none', flexShrink: 0 }}
-                                        >
-                                            View
-                                        </a>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Surgical History */}
-                    {clinicalData && clinicalData.surgical_history.length > 0 && (
+                    {isSectionVisible('surgical_history') && clinicalData && clinicalData.surgical_history.length > 0 && (
                         <div className="detail-section">
                             <SectionHeader title="Surgical History" />
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -491,8 +699,7 @@ export default function PatientDetailPage() {
                         </div>
                     )}
 
-                    {/* Manual Signals (legacy) */}
-                    {patient.signals && patient.signals.length > 0 && (
+                    {isSectionVisible('signals') && patient.signals && patient.signals.length > 0 && (
                         <div className="detail-section">
                             <SectionHeader title="Recorded Signals" count={patient.signals.length} />
                             <div className="signal-timeline">
@@ -513,19 +720,107 @@ export default function PatientDetailPage() {
                         </div>
                     )}
 
-                    {/* Notes */}
                     {patient.notes && (
                         <div className="detail-section">
                             <SectionHeader title="Notes" />
-                            <div className="card">
-                                <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)' }}>{patient.notes}</p>
-                            </div>
+                            <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', margin: 0 }}>{patient.notes}</p>
                         </div>
                     )}
                 </div>
-            </div>
+            )}
 
-            {/* Add Signal Modal */}
+            {/* ── Trials Tab ── */}
+            {activeTab === 'trials' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', maxWidth: "100%" }}>
+                    {/* Signal-Rule Alignment */}
+                    <div className="detail-section">
+                        <div className="detail-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>Signal Eligibility Preview</span>
+                            <span style={{ fontSize: 'var(--font-xs)', fontWeight: 400, color: 'var(--text-tertiary)' }}>No AI · instant</span>
+                        </div>
+                        <SignalAlignmentSection alignment={signalAlignment} />
+                    </div>
+
+                    {/* Screening Cases */}
+                    <div className="detail-section">
+                        <SectionHeader title="Screening Cases" count={patient.screening_cases?.length} />
+                        {(!patient.screening_cases || patient.screening_cases.length === 0) ? (
+                            <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-2) 0' }}>No screening cases yet.</div>
+                        ) : (
+                            patient.screening_cases.map(sc => (
+                                <div key={sc.id} className="alert-card" onClick={() => navigate(`/screening/${sc.id}`)} style={{ cursor: 'pointer' }}>
+                                    <div className="alert-content">
+                                        <div className="alert-title">{sc.trial_name}</div>
+                                        <div className="alert-meta">
+                                            {sc.protocol_number && `${sc.protocol_number} · `}
+                                            <StatusBadge status={sc.status} />
+                                            {sc.assigned_user_name && ` · ${sc.assigned_user_name}`}
+                                        </div>
+                                        {sc.revisit_date && (
+                                            <div className="alert-meta" style={{ marginTop: 2 }}>Revisit: {formatDate(sc.revisit_date)}</div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+
+                    {/* AI Match History */}
+                    <div className="detail-section">
+                        <div className="detail-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>AI Match History</span>
+                            <button
+                                className="btn btn-sm btn-secondary"
+                                onClick={handleMatchNow}
+                                disabled={matching}
+                            >
+                                {matching ? 'Matching…' : 'Run Matching'}
+                            </button>
+                        </div>
+                        <MatchHistorySection signals={protocolSignals} />
+                    </div>
+                </div>
+            )}
+
+            {/* ── Documents Tab ── */}
+            {activeTab === 'documents' && (
+                <div style={{ maxWidth: "100%" }}>
+                    <div className="detail-section">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div className="detail-section-title" style={{ marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>Documents</div>
+                            <button className="btn btn-sm btn-secondary" onClick={() => docFileRef.current?.click()} disabled={uploading}>
+                                + Upload
+                            </button>
+                        </div>
+                        <div style={{ marginTop: 'var(--space-3)' }}>
+                            {(!patient.documents || (patient.documents as unknown[]).length === 0) ? (
+                                <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-4) 0', textAlign: 'center' }}>
+                                    No documents uploaded yet. Upload a lab report, imaging result, or clinic note to extract clinical data.
+                                </div>
+                            ) : (
+                                (patient.documents as { id: string; filename: string; document_type: string; created_at: string }[]).map(doc => (
+                                    <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 'var(--font-sm)' }}>
+                                        <span style={{ fontSize: 18 }}>📄</span>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.filename}</div>
+                                            <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)' }}>{doc.document_type} · {formatDate(doc.created_at)}</div>
+                                        </div>
+                                        <button
+                                            className="btn btn-sm btn-ghost"
+                                            style={{ color: 'var(--accent)', fontSize: 'var(--font-xs)', padding: '2px 8px', flexShrink: 0 }}
+                                            onClick={() => setPdfViewer({ url: api.getDocumentUrl(patient.id, doc.id), filename: doc.filename })}
+                                        >
+                                            View
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Add Signal Modal ── */}
             {showSignalModal && (
                 <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowSignalModal(false)}>
                     <div className="modal">
@@ -564,7 +859,7 @@ export default function PatientDetailPage() {
                 </div>
             )}
 
-            {/* Create Screening Case Modal */}
+            {/* ── Create Screening Case Modal ── */}
             {showCaseModal && (
                 <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowCaseModal(false)}>
                     <div className="modal">
@@ -595,6 +890,24 @@ export default function PatientDetailPage() {
                         </form>
                     </div>
                 </div>
+            )}
+
+            {/* ── Extraction Review Modal ── */}
+            {extractionReview && (
+                <ExtractionReviewModal
+                    result={extractionReview}
+                    onMatch={handleMatchNow}
+                    matching={matching}
+                    onClose={() => setExtractionReview(null)}
+                />
+            )}
+
+            {pdfViewer && (
+                <PDFViewerModal
+                    url={pdfViewer.url}
+                    filename={pdfViewer.filename}
+                    onClose={() => setPdfViewer(null)}
+                />
             )}
         </div>
     );

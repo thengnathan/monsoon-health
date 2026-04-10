@@ -6,6 +6,7 @@ import { useToast } from '../contexts/ToastContext';
 import { StatusBadge, formatDate } from '../utils';
 import type { TrialDetail, SignalType, VisitTemplate } from '../types';
 import ProtocolViewer from '../components/ProtocolViewer';
+import PDFViewerModal from '../components/PDFViewerModal';
 
 
 interface VisitForm {
@@ -388,6 +389,7 @@ export default function TrialDetailPage() {
     const [loading, setLoading] = useState(true);
     const [showVisitModal, setShowVisitModal] = useState(false);
     const [showSignalModal, setShowSignalModal] = useState(false);
+    const [pdfViewer, setPdfViewer] = useState<{ url: string; filename: string } | null>(null);
     const [reextracting, setReextracting] = useState(false);
     const [extractionPhase, setExtractionPhase] = useState<'idle' | 'waiting' | 'animating'>('idle');
     const extractionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -667,7 +669,7 @@ export default function TrialDetailPage() {
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                                        <a href={api.getProtocolUrl(id!)} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-secondary" style={{ padding: '4px 10px' }}>View</a>
+                                        <button className="btn btn-sm btn-secondary" style={{ padding: '4px 10px' }} onClick={() => setPdfViewer({ url: api.getProtocolUrl(id!), filename: trial.protocol!.filename })}>View</button>
                                         <button className="btn btn-sm btn-ghost" onClick={handleDeleteProtocol} style={{ color: 'var(--error)', padding: '4px 10px' }}>Remove</button>
                                     </div>
                                 </div>
@@ -1173,6 +1175,13 @@ export default function TrialDetailPage() {
                         </form>
                     </div>
                 </div>
+            )}
+            {pdfViewer && (
+                <PDFViewerModal
+                    url={pdfViewer.url}
+                    filename={pdfViewer.filename}
+                    onClose={() => setPdfViewer(null)}
+                />
             )}
         </div>
     );

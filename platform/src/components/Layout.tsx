@@ -16,6 +16,7 @@ const navItems: NavItem[] = [
     { to: '/trials', label: 'Trials', icon: '△' },
     { to: '/intake-submissions', label: 'Intake Forms', icon: '◫' },
     { to: '/notes', label: 'Notes', icon: '☰' },
+    { to: '/settings', label: 'Settings', icon: '⚙' },
 ];
 
 export type LayoutOutletContext = {
@@ -74,7 +75,10 @@ export default function Layout() {
                 </nav>
 
                 <div className="sidebar-footer">
-                    <div className="sidebar-user" style={{ gap: 'var(--space-3)' }}>
+                    <div className="sidebar-user" style={{ gap: 'var(--space-3)', cursor: 'pointer' }} onClick={e => {
+                        const btn = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('[data-clerk-user-button-trigger]') ?? (e.currentTarget as HTMLElement).querySelector<HTMLElement>('button');
+                        if (btn && !btn.contains(e.target as Node)) btn.click();
+                    }}>
                         <UserButton
                             afterSignOutUrl="/login"
                             appearance={{

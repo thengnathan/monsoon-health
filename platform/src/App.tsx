@@ -3,9 +3,9 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { ClerkProvider, useUser } from '@clerk/clerk-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
+import { SiteConfigProvider } from './contexts/SiteConfigContext';
 import Layout from './components/Layout';
-import LoginPage from './pages/LoginPage';
-import SignUpPage from './pages/SignUpPage';
+import AuthLayout from './components/AuthLayout';
 import DashboardPage from './pages/DashboardPage';
 import PatientsPage from './pages/PatientsPage';
 import PatientDetailPage from './pages/PatientDetailPage';
@@ -16,6 +16,7 @@ import ScreeningCaseDetailPage from './pages/ScreeningCaseDetailPage';
 import NotesPage from './pages/NotesPage';
 import IntakeFormPage from './pages/IntakeFormPage';
 import IntakeSubmissionsPage from './pages/IntakeSubmissionsPage';
+import SettingsPage from './pages/SettingsPage';
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
 
@@ -147,8 +148,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function PageWrapper({ children }: { children: React.ReactNode }) {
     const location = useLocation();
+    const segment = location.pathname.split('/')[1];
+    const baseKey = '/' + segment;
     return (
-        <div key={location.pathname} className="page-transition">
+        <div key={baseKey} className="page-transition">
             {children}
         </div>
     );
@@ -161,8 +164,8 @@ function AppRoutes() {
             {/* Public — no auth required */}
             <Route path="/intake" element={<IntakeFormPage />} />
 
-            <Route path="/login/*" element={<LoginPage />} />
-            <Route path="/sign-up/*" element={<SignUpPage />} />
+            <Route path="/login/*" element={<AuthLayout />} />
+            <Route path="/sign-up/*" element={<AuthLayout />} />
             <Route path="/" element={
                 <ProtectedRoute><Layout /></ProtectedRoute>
             }>
@@ -175,6 +178,7 @@ function AppRoutes() {
                 <Route path="screening/:id" element={<ScreeningCaseDetailPage />} />
                 <Route path="notes" element={<NotesPage />} />
                 <Route path="intake-submissions" element={<IntakeSubmissionsPage />} />
+                <Route path="settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/landing" />} />
         </Routes>
@@ -192,9 +196,11 @@ function ClerkApp() {
         >
             <BrowserRouter>
                 <AuthProvider>
+                    <SiteConfigProvider>
                     <ToastProvider>
                         <AppRoutes />
                     </ToastProvider>
+                    </SiteConfigProvider>
                 </AuthProvider>
             </BrowserRouter>
         </ClerkProvider>

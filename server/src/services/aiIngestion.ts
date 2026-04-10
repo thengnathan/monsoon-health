@@ -271,7 +271,7 @@ export async function extractProtocol(
 
 const PATIENT_SYSTEM = `You are a clinical data extraction assistant. Extract ALL clinically relevant information from patient documents. Always capture dates when present. Return ONLY valid JSON, no markdown, no explanation.`;
 
-const PATIENT_PROMPT = (text: string) => `Extract all clinical information from this patient document.
+const PATIENT_PROMPT = `Extract all clinical information from this patient document PDF.
 
 Rules:
 - Always include a date (YYYY-MM-DD) on every lab, vital, and imaging result if a date is present anywhere in the document
@@ -301,17 +301,14 @@ Return this exact JSON shape:
   "smoking_status": string,
   "alcohol_use": string,
   "clinical_notes": string
-}
+}`;
 
-DOCUMENT TEXT:
-${text}`;
-
-export async function extractPatientDocument(text: string): Promise<StructuredPatientDocument> {
-    const cleaned = cleanPdfText(text);
+export async function extractPatientDocument(pdfBuffer: Buffer): Promise<StructuredPatientDocument> {
     try {
-        console.log('[Extraction] Extracting patient document structured data...');
-        const result = await claudeExtract<StructuredPatientDocument>(
-            PATIENT_PROMPT(cleaned),
+        console.log('[Extraction] Extracting patient document via native PDF...');
+        const result = await claudeExtractFromPDF<StructuredPatientDocument>(
+            pdfBuffer,
+            PATIENT_PROMPT,
             PATIENT_SYSTEM,
         );
         console.log('[Extraction] Patient extraction complete');
