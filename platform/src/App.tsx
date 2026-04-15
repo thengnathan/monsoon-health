@@ -1,9 +1,9 @@
-import { useState, useEffect, createContext, useContext } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ClerkProvider, useUser } from '@clerk/clerk-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { SiteConfigProvider } from './contexts/SiteConfigContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import Layout from './components/Layout';
 import AuthLayout from './components/AuthLayout';
 import DashboardPage from './pages/DashboardPage';
@@ -20,122 +20,93 @@ import SettingsPage from './pages/SettingsPage';
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
 
-interface ThemeContextValue {
-    theme: 'light' | 'dark';
-    toggle: () => void;
-}
-
-const ThemeContext = createContext<ThemeContextValue>({ theme: 'dark', toggle: () => { } });
-export function useTheme() { return useContext(ThemeContext); }
-
-function ThemeProvider({ children }: { children: React.ReactNode }) {
-    const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('monsoon_theme') as 'light' | 'dark') || 'dark');
-
-    useEffect(() => {
-        document.documentElement.setAttribute('data-theme', theme);
-        localStorage.setItem('monsoon_theme', theme);
-    }, [theme]);
-
-    const toggle = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
-
-    return (
-        <ThemeContext.Provider value={{ theme, toggle }}>
-            {children}
-        </ThemeContext.Provider>
-    );
-}
-
-function getClerkAppearance(theme: 'light' | 'dark'): object {
-    const isDark = theme === 'dark';
-
-    return {
-        variables: {
-            colorPrimary: isDark ? '#88BDDF' : '#4A7FA8',
-            colorTextOnPrimaryBackground: isDark ? '#e4edf5' : '#ffffff',
-            colorBackground: isDark ? '#1e2d3a' : '#ffffff',
-            colorInputBackground: isDark ? 'rgba(20, 30, 40, 0.6)' : '#f5f8fb',
-            colorInputText: isDark ? '#e4edf5' : '#1a2530',
-            colorText: isDark ? '#e4edf5' : '#1a2530',
-            colorTextSecondary: isDark ? '#9ab0c4' : '#5a7a94',
-            colorDanger: '#e74c3c',
-            borderRadius: '10px',
-            fontFamily: "'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif",
+const CLERK_APPEARANCE = {
+    variables: {
+        colorPrimary: 'var(--accent-sea-blue)',
+        colorTextOnPrimaryBackground: 'var(--text-inverse)',
+        colorBackground: 'var(--surface-secondary)',
+        colorInputBackground: 'var(--surface-tertiary)',
+        colorInputText: 'var(--text-primary)',
+        colorText: 'var(--text-primary)',
+        colorTextSecondary: 'var(--text-secondary)',
+        colorDanger: 'var(--status-error)',
+        borderRadius: '6px',
+        fontFamily: "'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif",
+    },
+    elements: {
+        card: {
+            backgroundColor: 'var(--surface-secondary)',
+            backdropFilter: 'blur(40px)',
+            WebkitBackdropFilter: 'blur(40px)',
+            border: '1px solid var(--border-default)',
+            boxShadow: 'var(--shadow-lg)',
         },
-        elements: {
-            card: {
-                backgroundColor: isDark ? 'rgba(26, 37, 48, 0.95)' : '#ffffff',
-                backdropFilter: 'blur(40px)',
-                WebkitBackdropFilter: 'blur(40px)',
-                border: isDark ? '1px solid rgba(106, 137, 167, 0.15)' : '1px solid rgba(106, 137, 167, 0.2)',
-                boxShadow: isDark ? '0 32px 80px rgba(0, 0, 0, 0.35)' : '0 16px 48px rgba(0, 0, 0, 0.1)',
-            },
-            rootBox: { color: isDark ? '#e4edf5' : '#1a2530' },
-            pageScrollBox: { backgroundColor: isDark ? '#1e2d3a' : '#ffffff', borderRadius: '16px', overflow: 'hidden' },
-            page: { backgroundColor: 'transparent' },
-            profilePage: { backgroundColor: 'transparent' },
-            modalContent: { backgroundColor: isDark ? '#1e2d3a' : '#ffffff', borderRadius: '16px', overflow: 'hidden' },
-            modalBackdrop: { backgroundColor: 'rgba(0,0,0,0.5)' },
-            headerTitle: { color: isDark ? '#e4edf5' : '#1a2530' },
-            headerSubtitle: { color: isDark ? '#9ab0c4' : '#5a7a94' },
-            userPreviewMainIdentifier: { color: isDark ? '#e4edf5' : '#1a2530' },
-            userPreviewSecondaryIdentifier: { color: isDark ? '#9ab0c4' : '#5a7a94' },
-            userButtonPopoverCard: {
-                backgroundColor: isDark ? '#1e2d3a' : '#ffffff',
-                border: isDark ? '1px solid rgba(106, 137, 167, 0.2)' : '1px solid #e0e8ef',
-            },
-            userButtonPopoverActionButton: { color: isDark ? '#9ab0c4' : '#4a6a80' },
-            userButtonPopoverActionButtonText: { color: isDark ? '#9ab0c4' : '#4a6a80' },
-            userButtonPopoverActionButtonIcon: { color: isDark ? '#88BDDF' : '#4A7FA8' },
-            userButtonPopoverFooter: { display: 'none' },
-            menuButton: { color: isDark ? '#9ab0c4' : '#4a6a80' },
-            menuItem: { color: isDark ? '#9ab0c4' : '#4a6a80' },
-            profileSectionTitle: { color: isDark ? '#9ab0c4' : '#5a7a94', borderColor: isDark ? 'rgba(106, 137, 167, 0.2)' : '#e0e8ef' },
-            profileSectionTitleText: { color: isDark ? '#9ab0c4' : '#5a7a94' },
-            profileSectionContent: { color: isDark ? '#e4edf5' : '#1a2530' },
-            profileSectionPrimaryButton: { color: isDark ? '#88BDDF' : '#4A7FA8' },
-            formFieldLabel: { color: isDark ? '#9ab0c4' : '#5a7a94' },
-            formFieldInput: {
-                backgroundColor: isDark ? 'rgba(20, 30, 40, 0.6)' : '#f5f8fb',
-                color: isDark ? '#e4edf5' : '#1a2530',
-                borderColor: isDark ? 'rgba(106, 137, 167, 0.2)' : '#d0dae4',
-            },
-            formButtonPrimary: {
-                background: isDark ? 'linear-gradient(135deg, #6A89A7, #384959)' : 'linear-gradient(135deg, #4A7FA8, #6A89A7)',
-                color: '#ffffff',
-            },
-            formButtonReset: { color: isDark ? '#88BDDF' : '#4A7FA8' },
-            avatarImageActionsUpload: { color: isDark ? '#88BDDF' : '#4A7FA8' },
-            avatarImageActionsRemove: { color: isDark ? '#e74c3c' : '#c0392b' },
-            fileDropAreaBox: {
-                backgroundColor: isDark ? 'rgba(56, 73, 89, 0.3)' : '#f5f8fb',
-                borderColor: isDark ? 'rgba(106, 137, 167, 0.3)' : '#d0dae4',
-                color: isDark ? '#9ab0c4' : '#5a7a94',
-            },
-            fileDropAreaIconBox: { color: isDark ? '#88BDDF' : '#4A7FA8' },
-            fileDropAreaHint: { color: isDark ? '#9ab0c4' : '#5a7a94' },
-            fileDropAreaButtonPrimary: { color: isDark ? '#88BDDF' : '#4A7FA8' },
-            badge: {
-                backgroundColor: isDark ? 'rgba(136, 189, 223, 0.15)' : 'rgba(74, 127, 168, 0.12)',
-                color: isDark ? '#88BDDF' : '#4A7FA8',
-            },
-            tagPrimaryText: { color: isDark ? '#88BDDF' : '#4A7FA8' },
-            footerActionLink: { color: isDark ? '#88BDDF' : '#4A7FA8' },
-            identityPreviewEditButton: { color: isDark ? '#88BDDF' : '#4A7FA8' },
-            identityPreviewText: { color: isDark ? '#e4edf5' : '#1a2530' },
-            dangerSection: { borderColor: isDark ? 'rgba(231, 76, 60, 0.3)' : 'rgba(192, 57, 43, 0.2)' },
-            accordionTriggerButton: { color: isDark ? '#9ab0c4' : '#5a7a94' },
-            navbarButton: { color: isDark ? '#9ab0c4' : '#4a6a80' },
-            navbarButtonIcon: { color: isDark ? '#88BDDF' : '#4A7FA8' },
-            socialButtonsBlockButton: {
-                backgroundColor: isDark ? 'rgba(56, 73, 89, 0.5)' : '#f5f8fb',
-                borderColor: isDark ? 'rgba(106, 137, 167, 0.2)' : '#d0dae4',
-                color: isDark ? '#e4edf5' : '#1a2530',
-            },
-            activeDevice: { backgroundColor: isDark ? 'rgba(56, 73, 89, 0.3)' : '#f5f8fb' },
-            activeDeviceListItem: { color: isDark ? '#e4edf5' : '#1a2530' },
+        rootBox: { color: 'var(--text-primary)' },
+        pageScrollBox: { backgroundColor: 'var(--surface-secondary)', borderRadius: '8px', overflow: 'hidden' },
+        page: { backgroundColor: 'transparent' },
+        profilePage: { backgroundColor: 'transparent' },
+        modalContent: { backgroundColor: 'var(--surface-secondary)', borderRadius: '8px', overflow: 'hidden' },
+        modalBackdrop: { backgroundColor: 'var(--surface-overlay)' },
+        headerTitle: { color: 'var(--text-primary)' },
+        headerSubtitle: { color: 'var(--text-secondary)' },
+        userPreviewMainIdentifier: { color: 'var(--text-primary)' },
+        userPreviewSecondaryIdentifier: { color: 'var(--text-secondary)' },
+        userButtonPopoverCard: {
+            backgroundColor: 'var(--surface-secondary)',
+            border: '1px solid var(--border-default)',
         },
-    };
-}
+        userButtonPopoverActionButton: { color: 'var(--text-secondary)' },
+        userButtonPopoverActionButtonText: { color: 'var(--text-secondary)' },
+        userButtonPopoverActionButtonIcon: { color: 'var(--accent-sea-blue)' },
+        userButtonPopoverFooter: { display: 'none' },
+        menuButton: { color: 'var(--text-secondary)' },
+        menuItem: { color: 'var(--text-secondary)' },
+        profileSectionTitle: { color: 'var(--text-secondary)', borderColor: 'var(--border-default)' },
+        profileSectionTitleText: { color: 'var(--text-secondary)' },
+        profileSectionContent: { color: 'var(--text-primary)' },
+        profileSectionPrimaryButton: { color: 'var(--accent-sea-blue)' },
+        formFieldLabel: { color: 'var(--text-secondary)' },
+        formFieldInput: {
+            backgroundColor: 'var(--surface-tertiary)',
+            color: 'var(--text-primary)',
+            borderColor: 'var(--border-default)',
+        },
+        formButtonPrimary: {
+            background: 'var(--accent-sea-blue)',
+            color: 'var(--text-inverse)',
+        },
+        formButtonReset: { color: 'var(--accent-sea-blue)' },
+        avatarImageActionsUpload: { color: 'var(--accent-sea-blue)' },
+        avatarImageActionsRemove: { color: 'var(--status-error)' },
+        fileDropAreaBox: {
+            backgroundColor: 'var(--surface-tertiary)',
+            borderColor: 'var(--border-strong)',
+            color: 'var(--text-secondary)',
+        },
+        fileDropAreaIconBox: { color: 'var(--accent-sea-blue)' },
+        fileDropAreaHint: { color: 'var(--text-secondary)' },
+        fileDropAreaButtonPrimary: { color: 'var(--accent-sea-blue)' },
+        badge: {
+            backgroundColor: 'var(--accent-sea-blue-subtle)',
+            color: 'var(--accent-sea-blue)',
+        },
+        tagPrimaryText: { color: 'var(--accent-sea-blue)' },
+        footerActionLink: { color: 'var(--accent-sea-blue)' },
+        identityPreviewEditButton: { color: 'var(--accent-sea-blue)' },
+        identityPreviewText: { color: 'var(--text-primary)' },
+        dangerSection: { borderColor: 'var(--status-error-bg)' },
+        accordionTriggerButton: { color: 'var(--text-secondary)' },
+        navbarButton: { color: 'var(--text-secondary)' },
+        navbarButtonIcon: { color: 'var(--accent-sea-blue)' },
+        socialButtonsBlockButton: {
+            backgroundColor: 'var(--surface-tertiary)',
+            borderColor: 'var(--border-default)',
+            color: 'var(--text-primary)',
+        },
+        activeDevice: { backgroundColor: 'var(--surface-tertiary)' },
+        activeDeviceListItem: { color: 'var(--text-primary)' },
+    },
+};
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const { isLoaded, isSignedIn } = useUser();
@@ -187,12 +158,11 @@ function AppRoutes() {
 }
 
 function ClerkApp() {
-    const { theme } = useTheme();
     return (
         <ClerkProvider
             publishableKey={CLERK_KEY}
             afterSignOutUrl="/login"
-            appearance={getClerkAppearance(theme)}
+            appearance={CLERK_APPEARANCE}
         >
             <BrowserRouter>
                 <AuthProvider>

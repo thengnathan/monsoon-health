@@ -152,6 +152,37 @@ router.delete('/users/:id', requireRole('MANAGER'), async (req: Request, res: Re
     res.json({ success: true });
 });
 
+// PATCH /api/settings/trial-profile — save important signal selections (flat list)
+router.patch('/trial-profile', requireRole('MANAGER', 'CRC'), async (req: Request, res: Response) => {
+    const db = req.app.locals.db;
+    const { trial_profile_specialties, trial_profile_signals } = req.body as {
+        trial_profile_specialties?: string[];
+        trial_profile_signals?: Record<string, string[]>;
+    };
+
+    if (!Array.isArray(trial_profile_specialties) || !trial_profile_signals || typeof trial_profile_signals !== 'object') {
+        res.status(400).json({ error: 'trial_profile_specialties and trial_profile_signals are required' }); return;
+    }
+
+    const existing = (await db.query(
+        'SELECT patient_profile_config FROM sites WHERE id = $1',
+        [req.user.site_id]
+    )).rows[0];
+
+    const existingConfig = (typeof existing?.patient_profile_config === 'object'
+        ? existing.patient_profile_config
+        : JSON.parse(existing?.patient_profile_config || '{}')) as SitePatientProfileConfig;
+
+    const updated = { ...existingConfig, trial_profile_specialties, trial_profile_signals };
+
+    await db.query(
+        `UPDATE sites SET patient_profile_config = $1, updated_at = NOW() WHERE id = $2`,
+        [JSON.stringify(updated), req.user.site_id]
+    );
+
+    res.json({ success: true });
+});
+
 // PATCH /api/settings/site-name — update site display name
 router.patch('/site-name', requireRole('MANAGER'), async (req: Request, res: Response) => {
     const db = req.app.locals.db;

@@ -50,3 +50,57 @@
 - Simplicity First: Make every change as simple as possible. Minimize code impact
 - No Laziness: Find root causes. No temporary fixes. Maintain senior developer standards
 - Minimal Impact: Only touch what's necessary. Avoid introducing new bugs
+
+---
+
+## Key Design Constraints
+
+### No Native OS Dropdowns
+Always use `platform/src/components/Select.tsx` for ALL dropdown/select elements — never native `<select>`. The custom component uses `createPortal`, smart viewport-flip positioning, and matches the design system.
+
+### CSS Custom Properties Only
+No Tailwind. All styling via CSS custom properties defined in `platform/src/index.css`. When referencing design tokens in TSX inline styles, always use `var(--token-name)` — never hardcode hex values.
+
+**Defined tokens (dark mode):** `--bg-root`, `--bg-surface`, `--bg-surface-raised`, `--bg-surface-hover`, `--text-primary`, `--text-secondary`, `--text-tertiary`, `--accent`, `--accent-hover`, `--accent-muted`, `--border-default`, `--border-strong`, `--border-subtle`
+
+**Undefined / do not use:** `--bg-primary`, `--bg-secondary`, `--border`, `--primary` — these are not defined and will silently produce invisible elements.
+
+### Sidebar Animation
+- Sidebar and its edge handle MUST use `transform: translateX()` — never `left` property — to stay on the GPU compositor layer
+- ThemeContext must inject transition styles as flash-only (300ms window around toggle), NOT permanently. Permanent `!important` injection blocks the sidebar transform animation.
+
+### Overlays: Frosted Glass, Not Opaque
+Loading/extraction overlays: `background: rgba(10,13,20,0.72)` + `backdropFilter: blur(12px)`. Never use a solid dark color as a full-page overlay.
+
+### Portals for Tooltips and Dropdowns
+Any tooltip, dropdown, or popover rendered inside a scrollable or `overflow:hidden` container must use `createPortal` at `document.body` with `position: fixed` and `getBoundingClientRect()` for positioning. Use viewport-half detection to flip direction (e.g. tooltip renders above trigger if trigger is in the bottom half of the screen).
+
+### Native PDF for Protocol Ingestion
+Use Anthropic document blocks (native PDF) for protocol extraction — NOT pdf-parse text extraction. Streaming is required: `client.messages.stream()`.
+
+### Multi-tenant by site_id
+Every database table has `site_id`. Every query must filter by `site_id`.
+
+### Monorepo Structure
+Three independent apps — `platform/` (React SPA), `server/` (Express API), `marketing/` — with no shared tooling. TypeScript throughout both client and server.
+
+---
+
+## Protocol Extraction Architecture
+
+Two sequential AI calls in `server/src/services/aiIngestion.ts`:
+1. **Call 1** — metadata, all visits (ALL cohorts, prefixed names), criteria, signal rules (max 6)
+2. **Call 2** — Schedule of Assessments per visit (ALL SoA tables, never skip administrative items)
+
+Visit name fuzzy matching (3 tiers): exact → normalized (em-dash/whitespace) → partial substring.
+
+Frontend polling (`TrialDetailPage`):
+- **Phase 1:** Poll until Call 1 data appears → dismiss overlay, start card-reveal animation
+- **Phase 2:** Continue polling silently until `extracted_visits` in `structured_data` arrives
+- **Navigation persistence:** Write `extracting_<id>` timestamp to `sessionStorage` on poll start; on component mount check if key exists + < 5 min old + extraction incomplete → resume `startExtractionPoll({ silent: true })`
+
+---
+
+## Signal Rules UI
+- Display signal type option labels WITHOUT data_type suffix — no `(Match)`, `(Numeric)`, etc.
+- Max 6 signal rules per trial, surfaced from AI extraction

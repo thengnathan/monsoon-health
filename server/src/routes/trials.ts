@@ -30,8 +30,8 @@ async function insertExtractedRules(
             `INSERT INTO trial_signal_rules
              (id, site_id, trial_id, signal_type_id, signal_label, field, operator,
               threshold_number, min_value, max_value, threshold_text, criteria_text,
-              source, is_active)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'ai_extracted', true)`,
+              cohort, source, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ai_extracted', true)`,
             [
                 id, siteId, trialId,
                 match ? (match as { id: string }).id : null,
@@ -43,6 +43,7 @@ async function insertExtractedRules(
                 rule.value_max ?? null,
                 rule.value_text ?? null,
                 rule.source_criterion ?? null,
+                rule.cohort ?? null,
             ]
         );
     }
@@ -160,22 +161,28 @@ router.get('/:id', async (req: Request, res: Response) => {
     )).rows[0];
     if (!trial) { res.status(404).json({ error: 'Trial not found' }); return; }
 
-    const [rules, cases, protocol, visit_templates] = await Promise.all([
-        db.query(`SELECT tsr.*, st.name as signal_name, COALESCE(st.label, tsr.signal_label) as signal_label, COALESCE(st.unit, '') as unit, st.value_type
-                  FROM trial_signal_rules tsr LEFT JOIN signal_types st ON tsr.signal_type_id = st.id
-                  WHERE tsr.trial_id = $1 AND tsr.site_id = $2 ORDER BY COALESCE(st.label, tsr.signal_label)`,
-                 [req.params.id, req.user.site_id]),
-        db.query(`SELECT sc.*, p.first_name, p.last_name, p.dob, u.name as assigned_user_name
-                  FROM screening_cases sc JOIN patients p ON sc.patient_id = p.id
-                  LEFT JOIN users u ON sc.assigned_user_id = u.id
-                  WHERE sc.trial_id = $1 AND sc.site_id = $2 ORDER BY sc.updated_at DESC`,
-                 [req.params.id, req.user.site_id]),
-        db.query(`SELECT id, filename, mime_type, file_size, version, uploaded_by_user_id, created_at, structured_data
-                  FROM trial_protocols WHERE trial_id = $1 AND site_id = $2 ORDER BY created_at DESC LIMIT 1`,
-                 [req.params.id, req.user.site_id]),
-        db.query(`SELECT * FROM visit_templates WHERE trial_id = $1 AND site_id = $2 ORDER BY sort_order, day_offset`,
-                 [req.params.id, req.user.site_id]),
-    ]);
+    const rules = await db.query(
+        `SELECT tsr.*, st.name as signal_name, COALESCE(st.label, tsr.signal_label) as signal_label, COALESCE(st.unit, '') as unit, st.value_type, st.category
+         FROM trial_signal_rules tsr LEFT JOIN signal_types st ON tsr.signal_type_id = st.id
+         WHERE tsr.trial_id = $1 AND tsr.site_id = $2 ORDER BY st.category NULLS LAST, COALESCE(st.label, tsr.signal_label)`,
+        [req.params.id, req.user.site_id]
+    );
+    const cases = await db.query(
+        `SELECT sc.*, p.first_name, p.last_name, p.dob, u.name as assigned_user_name
+         FROM screening_cases sc JOIN patients p ON sc.patient_id = p.id
+         LEFT JOIN users u ON sc.assigned_user_id = u.id
+         WHERE sc.trial_id = $1 AND sc.site_id = $2 ORDER BY sc.updated_at DESC`,
+        [req.params.id, req.user.site_id]
+    );
+    const protocol = await db.query(
+        `SELECT id, filename, mime_type, file_size, version, uploaded_by_user_id, created_at, structured_data
+         FROM trial_protocols WHERE trial_id = $1 AND site_id = $2 ORDER BY created_at DESC LIMIT 1`,
+        [req.params.id, req.user.site_id]
+    );
+    const visit_templates = await db.query(
+        `SELECT * FROM visit_templates WHERE trial_id = $1 AND site_id = $2 ORDER BY sort_order, day_offset`,
+        [req.params.id, req.user.site_id]
+    );
 
     res.json({
         ...trial,
@@ -356,6 +363,30 @@ router.post('/:id/protocol/reextract', requireRole('MANAGER', 'CRC'), async (req
         [trialId, siteId]
     )).rows[0];
     if (!protocol) { res.status(404).json({ error: 'No protocol uploaded for this trial' }); return; }
+
+    // Clear old extracted data BEFORE responding so the client poll sees empty state
+    // until real new data arrives — prevents the overlay from dismissing immediately
+    // on the first poll tick with stale data.
+    await Promise.all([
+        db.query(
+            "DELETE FROM visit_templates WHERE trial_id = $1 AND site_id = $2 AND source = 'ai_extracted'",
+            [trialId, siteId]
+        ),
+        db.query(
+            "DELETE FROM trial_signal_rules WHERE trial_id = $1 AND site_id = $2 AND source = 'ai_extracted'",
+            [trialId, siteId]
+        ),
+        db.query(
+            `UPDATE trials SET inclusion_criteria = NULL, exclusion_criteria = NULL,
+             extracted_criteria_json = NULL, updated_at = NOW()
+             WHERE id = $1 AND site_id = $2`,
+            [trialId, siteId]
+        ),
+        db.query(
+            'UPDATE trial_protocols SET structured_data = NULL WHERE trial_id = $1 AND site_id = $2',
+            [trialId, siteId]
+        ),
+    ]);
 
     // Respond immediately — re-extraction runs in background
     res.json({ status: 'processing' });

@@ -1,5 +1,6 @@
 import { useState, CSSProperties } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Select } from '../components/Select';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -379,22 +380,35 @@ export default function IntakeFormPage() {
                     </div>
                     <div style={s.field}>
                         <label style={s.label}>Biological Sex<span style={s.required}>*</span></label>
-                        <select style={s.select} value={form.about.biological_sex}
-                                onChange={e => setAbout('biological_sex', e.target.value)}>
-                            <option value="">Select</option>
-                            <option>Male</option><option>Female</option><option>Prefer not to say</option>
-                        </select>
+                        <Select
+                            value={form.about.biological_sex}
+                            onChange={val => setAbout('biological_sex', val)}
+                            options={[
+                                { value: '', label: 'Select' },
+                                { value: 'Male', label: 'Male' },
+                                { value: 'Female', label: 'Female' },
+                                { value: 'Prefer not to say', label: 'Prefer not to say' },
+                            ]}
+                            style={s.select}
+                        />
                     </div>
                 </div>
 
                 <div style={s.field}>
                     <label style={s.label}>Gender Identity</label>
-                    <select style={s.select} value={form.about.gender_identity}
-                            onChange={e => setAbout('gender_identity', e.target.value)}>
-                        <option value="">Select (optional)</option>
-                        <option>Man</option><option>Woman</option><option>Non-binary</option>
-                        <option>Prefer to self-describe</option><option>Prefer not to say</option>
-                    </select>
+                    <Select
+                        value={form.about.gender_identity}
+                        onChange={val => setAbout('gender_identity', val)}
+                        options={[
+                            { value: '', label: 'Select (optional)' },
+                            { value: 'Man', label: 'Man' },
+                            { value: 'Woman', label: 'Woman' },
+                            { value: 'Non-binary', label: 'Non-binary' },
+                            { value: 'Prefer to self-describe', label: 'Prefer to self-describe' },
+                            { value: 'Prefer not to say', label: 'Prefer not to say' },
+                        ]}
+                        style={s.select}
+                    />
                 </div>
 
                 <div style={s.field}>
@@ -411,11 +425,19 @@ export default function IntakeFormPage() {
 
                 <div style={s.field}>
                     <label style={s.label}>Preferred Language</label>
-                    <select style={s.select} value={form.about.preferred_language}
-                            onChange={e => setAbout('preferred_language', e.target.value)}>
-                        <option>English</option><option>Spanish</option><option>Hmong</option>
-                        <option>Punjabi</option><option>Arabic</option><option>Other</option>
-                    </select>
+                    <Select
+                        value={form.about.preferred_language}
+                        onChange={val => setAbout('preferred_language', val)}
+                        options={[
+                            { value: 'English', label: 'English' },
+                            { value: 'Spanish', label: 'Spanish' },
+                            { value: 'Hmong', label: 'Hmong' },
+                            { value: 'Punjabi', label: 'Punjabi' },
+                            { value: 'Arabic', label: 'Arabic' },
+                            { value: 'Other', label: 'Other' },
+                        ]}
+                        style={s.select}
+                    />
                 </div>
 
                 <div style={s.field}>
@@ -592,13 +614,20 @@ export default function IntakeFormPage() {
                 <div style={s.row}>
                     <div style={s.field}>
                         <label style={s.label}>Biopsy result / fibrosis stage</label>
-                        <select style={s.select} value={form.liver_health.biopsy_stage}
-                                onChange={e => setLiver('biopsy_stage', e.target.value)}>
-                            <option value="">Select if known</option>
-                            <option>F0 — No fibrosis</option><option>F1 — Mild fibrosis</option>
-                            <option>F2 — Moderate fibrosis</option><option>F3 — Severe fibrosis</option>
-                            <option>F4 — Cirrhosis</option><option>Unknown / Not told result</option>
-                        </select>
+                        <Select
+                            value={form.liver_health.biopsy_stage}
+                            onChange={val => setLiver('biopsy_stage', val)}
+                            options={[
+                                { value: '', label: 'Select if known' },
+                                { value: 'F0 — No fibrosis', label: 'F0 — No fibrosis' },
+                                { value: 'F1 — Mild fibrosis', label: 'F1 — Mild fibrosis' },
+                                { value: 'F2 — Moderate fibrosis', label: 'F2 — Moderate fibrosis' },
+                                { value: 'F3 — Severe fibrosis', label: 'F3 — Severe fibrosis' },
+                                { value: 'F4 — Cirrhosis', label: 'F4 — Cirrhosis' },
+                                { value: 'Unknown / Not told result', label: 'Unknown / Not told result' },
+                            ]}
+                            style={s.select}
+                        />
                     </div>
                     <div style={s.field}>
                         <label style={s.label}>Approximate date of biopsy</label>
@@ -815,12 +844,19 @@ export default function IntakeFormPage() {
                 </div>
                 <div style={s.field}>
                     <label style={s.label}>On a typical drinking occasion, how many drinks do you have?</label>
-                    <select style={s.select} value={form.lifestyle.drinks_per_occasion}
-                            onChange={e => setLifestyle('drinks_per_occasion', e.target.value)}>
-                        <option value="">Select</option>
-                        <option>1–2 drinks</option><option>3–4 drinks</option>
-                        <option>5–6 drinks</option><option>7 or more drinks</option><option>Not applicable</option>
-                    </select>
+                    <Select
+                        value={form.lifestyle.drinks_per_occasion}
+                        onChange={val => setLifestyle('drinks_per_occasion', val)}
+                        options={[
+                            { value: '', label: 'Select' },
+                            { value: '1–2 drinks', label: '1–2 drinks' },
+                            { value: '3–4 drinks', label: '3–4 drinks' },
+                            { value: '5–6 drinks', label: '5–6 drinks' },
+                            { value: '7 or more drinks', label: '7 or more drinks' },
+                            { value: 'Not applicable', label: 'Not applicable' },
+                        ]}
+                        style={s.select}
+                    />
                 </div>
                 <div style={s.field}>
                     <label style={s.label}>Have you ever been told by a doctor to cut back on drinking?</label>

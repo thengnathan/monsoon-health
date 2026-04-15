@@ -3,9 +3,10 @@ import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSiteConfig } from '../contexts/SiteConfigContext';
-import type { SpecialtyKey, SpecialtyTemplate, SiteSettingsResponse } from '../types';
+import { Select } from '../components/Select';
+import type { SpecialtyKey, SpecialtyTemplate, SiteSettingsResponse, SignalType } from '../types';
 
-type Section = 'general' | 'profile' | 'team';
+type Section = 'general' | 'profile' | 'trial_profile' | 'team' | 'preview';
 
 interface TeamUser {
     id: string;
@@ -40,6 +41,8 @@ function SectionNav({ active, onChange }: { active: Section; onChange: (s: Secti
     const items: { key: Section; label: string }[] = [
         { key: 'general', label: 'General' },
         { key: 'profile', label: 'Patient Profile' },
+        { key: 'trial_profile', label: 'Trial Profile' },
+        { key: 'preview', label: 'Patient Preview' },
         { key: 'team', label: 'Team' },
     ];
     return (
@@ -302,17 +305,31 @@ function ProfileSection({ data }: { data: SiteSettingsResponse }) {
                                                     {opts.map(opt => {
                                                         const checked = enabledOptions.has(opt.id);
                                                         return (
-                                                            <label key={opt.id} style={{
-                                                                display: 'flex', alignItems: 'center', gap: 7,
+                                                            <div key={opt.id} onClick={e => { e.stopPropagation(); toggleOption(opt.id); }} style={{
+                                                                display: 'flex', alignItems: 'center', gap: 8,
                                                                 cursor: 'pointer', fontSize: 'var(--font-sm)',
                                                                 color: checked ? 'var(--text-primary)' : 'var(--text-secondary)',
-                                                                padding: '2px 5px', borderRadius: 4,
-                                                                background: checked ? `${meta.color}10` : 'transparent',
+                                                                padding: '4px 6px', borderRadius: 4,
+                                                                background: checked ? 'var(--accent-sea-blue-subtle)' : 'transparent',
+                                                                transition: 'background 0.15s, color 0.15s',
+                                                                userSelect: 'none',
                                                             }}>
-                                                                <input type="checkbox" checked={checked} onChange={() => toggleOption(opt.id)}
-                                                                    style={{ accentColor: meta.color, width: 12, height: 12, flexShrink: 0 }} />
+                                                                <span style={{
+                                                                    width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                                                                    border: `1.5px solid ${checked ? 'var(--accent-sea-blue)' : 'var(--border-strong)'}`,
+                                                                    background: checked ? 'var(--accent-sea-blue)' : 'transparent',
+                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                    transition: 'all 0.15s',
+                                                                    opacity: checked ? 0.85 : 1,
+                                                                }}>
+                                                                    {checked && (
+                                                                        <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+                                                                            <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                                                        </svg>
+                                                                    )}
+                                                                </span>
                                                                 {opt.label}
-                                                            </label>
+                                                            </div>
                                                         );
                                                     })}
                                                 </div>
@@ -345,6 +362,73 @@ function ProfileSection({ data }: { data: SiteSettingsResponse }) {
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+// ── Patient Preview ───────────────────────────────────────────────────────────
+
+const PREVIEW_SECTIONS = [
+    { key: 'diagnoses', label: 'Diagnoses', description: 'Active & chronic diagnoses for the patient' },
+    { key: 'labs', label: 'Latest Labs', description: 'Most recent lab values (ALT, AST, etc.)' },
+    { key: 'imaging', label: 'Imaging', description: 'FibroScan results and other imaging' },
+    { key: 'medications', label: 'Medications', description: 'Current medications and dosages' },
+] as const;
+
+type PreviewKey = typeof PREVIEW_SECTIONS[number]['key'];
+
+function loadPreviewConfig(): Record<PreviewKey, boolean> {
+    try {
+        const raw = localStorage.getItem('patientPreviewConfig');
+        if (raw) return JSON.parse(raw);
+    } catch {}
+    return { diagnoses: true, labs: true, imaging: true, medications: true };
+}
+
+function PreviewSection() {
+    const { addToast } = useToast();
+    const [config, setConfig] = useState<Record<PreviewKey, boolean>>(loadPreviewConfig);
+
+    const toggle = (key: PreviewKey) => {
+        setConfig(prev => {
+            const next = { ...prev, [key]: !prev[key] };
+            localStorage.setItem('patientPreviewConfig', JSON.stringify(next));
+            return next;
+        });
+        addToast('Preview updated', 'success');
+    };
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-2)' }}>
+                Choose which sections appear in the patient list dropdown preview. Changes take effect immediately.
+            </div>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                {PREVIEW_SECTIONS.map((sec, i) => {
+                    const isLast = i === PREVIEW_SECTIONS.length - 1;
+                    const isOn = config[sec.key];
+                    return (
+                        <div key={sec.key} style={{
+                            display: 'flex', alignItems: 'center', gap: 'var(--space-4)',
+                            padding: 'var(--space-4) var(--space-5)',
+                            borderBottom: isLast ? 'none' : '1px solid var(--border-subtle)',
+                            borderLeft: `3px solid ${isOn ? 'var(--accent)' : 'transparent'}`,
+                            background: isOn ? 'var(--accent-muted)' : 'transparent',
+                            transition: 'all 0.2s',
+                        }}>
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 600, fontSize: 'var(--font-sm)', color: isOn ? 'var(--accent)' : 'var(--text-primary)', marginBottom: 2 }}>
+                                    {sec.label}
+                                </div>
+                                <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)' }}>
+                                    {sec.description}
+                                </div>
+                            </div>
+                            <Toggle checked={isOn} onChange={() => toggle(sec.key)} color="var(--accent)" />
+                        </div>
+                    );
+                })}
+            </div>
         </div>
     );
 }
@@ -437,15 +521,19 @@ function TeamSection() {
                 </div>
 
                 {!isSelf ? (
-                    <select value={user.role} onChange={e => handleRoleChange(user, e.target.value)} disabled={isUpdating}
+                    <Select
+                        value={user.role}
+                        onChange={val => handleRoleChange(user, val)}
+                        disabled={isUpdating}
+                        options={ROLE_OPTIONS.map(r => ({ value: r, label: r }))}
                         style={{
-                            padding: '3px 8px', background: 'var(--bg-root)',
-                            border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
+                            width: 'auto', padding: '3px 8px',
+                            background: 'var(--bg-root)',
+                            border: '1px solid var(--border-default)',
+                            borderRadius: 'var(--radius-sm)',
                             color: roleColor, fontSize: 'var(--font-xs)', fontWeight: 600,
-                            cursor: 'pointer', fontFamily: 'inherit',
-                        }}>
-                        {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
-                    </select>
+                        }}
+                    />
                 ) : (
                     <span style={{ fontSize: 'var(--font-xs)', fontWeight: 600, color: roleColor, padding: '3px 8px' }}>{user.role}</span>
                 )}
@@ -498,6 +586,248 @@ function TeamSection() {
     );
 }
 
+// ── Trial Profile ─────────────────────────────────────────────────────────────
+
+function TrialProfileSection({ data }: { data: SiteSettingsResponse }) {
+    const { addToast } = useToast();
+    const [signalTypes, setSignalTypes] = useState<SignalType[]>([]);
+    const [loadingSignals, setLoadingSignals] = useState(true);
+    const [expandedSpecialty, setExpandedSpecialty] = useState<SpecialtyKey | null>(null);
+
+    const initialSpecialties = data.site.patient_profile_config?.trial_profile_specialties ?? [];
+    const initialSignals = data.site.patient_profile_config?.trial_profile_signals ?? {};
+    const [enabledSpecialties, setEnabledSpecialties] = useState<SpecialtyKey[]>(initialSpecialties);
+    const [selections, setSelections] = useState<Record<SpecialtyKey, Set<string>>>(() => ({
+        HEPATOLOGY: new Set(initialSignals.HEPATOLOGY ?? []),
+        ONCOLOGY:   new Set(initialSignals.ONCOLOGY   ?? []),
+        HEMATOLOGY: new Set(initialSignals.HEMATOLOGY ?? []),
+    }));
+    const [dirty, setDirty] = useState(false);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        api.getSignalTypes()
+            .then(setSignalTypes)
+            .catch(() => addToast('Could not load signal types', 'error'))
+            .finally(() => setLoadingSignals(false));
+    }, []);
+
+    const toggleSpecialty = (key: SpecialtyKey) => {
+        setEnabledSpecialties(prev => {
+            const isOn = prev.includes(key);
+            const next = isOn ? prev.filter(s => s !== key) : [...prev, key];
+            if (!isOn) setExpandedSpecialty(key);
+            if (isOn && expandedSpecialty === key) setExpandedSpecialty(null);
+            return next;
+        });
+        setDirty(true);
+    };
+
+    const toggle = (key: SpecialtyKey, id: string) => {
+        setSelections(prev => {
+            const s = new Set(prev[key]);
+            s.has(id) ? s.delete(id) : s.add(id);
+            return { ...prev, [key]: s };
+        });
+        setDirty(true);
+    };
+
+    const selectAll = (key: SpecialtyKey, types: SignalType[]) => {
+        setSelections(prev => ({ ...prev, [key]: new Set(types.map(t => t.id)) }));
+        setDirty(true);
+    };
+
+    const clearAll = (key: SpecialtyKey) => {
+        setSelections(prev => ({ ...prev, [key]: new Set() }));
+        setDirty(true);
+    };
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            await api.updateTrialProfile({
+                trial_profile_specialties: enabledSpecialties,
+                trial_profile_signals: Object.fromEntries(
+                    Object.entries(selections).map(([k, ids]) => [k, Array.from(ids)])
+                ),
+            });
+            addToast('Saved', 'success');
+            setDirty(false);
+        } catch (e) { addToast((e as Error).message, 'error'); }
+        setSaving(false);
+    };
+
+    // Bucket signal types by specialty
+    const bySpecialty: Record<SpecialtyKey, SignalType[]> = {
+        HEPATOLOGY: signalTypes.filter(s => s.specialty === 'HEPATOLOGY'),
+        ONCOLOGY:   signalTypes.filter(s => s.specialty === 'ONCOLOGY'),
+        HEMATOLOGY: signalTypes.filter(s => s.specialty === 'HEMATOLOGY'),
+    };
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                {data.all_specialty_keys.map((key, i) => {
+                    const meta = SPECIALTY_META[key];
+                    const tmpl = data.specialty_templates[key];
+                    const types = bySpecialty[key];
+                    const selectedSet = selections[key];
+                    const isOn = enabledSpecialties.includes(key);
+                    const isExpanded = expandedSpecialty === key && isOn;
+                    const isLast = i === data.all_specialty_keys.length - 1;
+
+                    return (
+                        <div key={key} style={{ borderBottom: isLast && !isExpanded ? 'none' : '1px solid var(--border-subtle)' }}>
+                            {/* Specialty row */}
+                            <div style={{
+                                display: 'flex', alignItems: 'center', gap: 'var(--space-3)',
+                                padding: 'var(--space-3) var(--space-5)',
+                                borderLeft: `3px solid ${isOn ? meta.color : 'transparent'}`,
+                                background: isOn ? meta.lightBg : 'transparent',
+                                transition: 'all 0.2s',
+                            }}>
+                                <div style={{
+                                    width: 34, height: 34, borderRadius: 'var(--radius-sm)', flexShrink: 0,
+                                    background: isOn ? meta.color : 'var(--bg-root)',
+                                    border: `1px solid ${isOn ? meta.color : 'var(--border-default)'}`,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    color: isOn ? '#fff' : 'var(--text-tertiary)',
+                                    fontWeight: 700, fontSize: 13, transition: 'all 0.2s',
+                                }}>
+                                    {meta.icon}
+                                </div>
+
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <span style={{ fontWeight: 600, fontSize: 'var(--font-sm)', color: isOn ? meta.color : 'var(--text-primary)' }}>
+                                            {tmpl.label}
+                                        </span>
+                                        {isOn && selectedSet.size > 0 && (
+                                            <span style={{
+                                                fontSize: 10, padding: '1px 6px', borderRadius: 'var(--radius-full)',
+                                                background: `${meta.color}20`, color: meta.color, fontWeight: 600,
+                                            }}>
+                                                {selectedSet.size}/{types.length} signals
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)' }}>
+                                        {meta.description}
+                                    </div>
+                                </div>
+
+                                {isOn && (
+                                    <button className="btn btn-ghost btn-sm"
+                                        onClick={() => setExpandedSpecialty(isExpanded ? null : key)}
+                                        style={{ color: meta.color, fontSize: 11 }}>
+                                        {isExpanded ? 'Done' : 'Signals'}
+                                    </button>
+                                )}
+
+                                <Toggle checked={isOn} onChange={() => toggleSpecialty(key)} color={meta.color} />
+                            </div>
+
+                            {/* Expanded signal picker */}
+                            {isExpanded && (
+                                <div style={{ borderTop: `1px solid ${meta.color}20`, background: 'var(--bg-root)', padding: 'var(--space-4) var(--space-5)' }}>
+                                    {loadingSignals ? (
+                                        <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--font-sm)' }}>Loading…</div>
+                                    ) : types.length === 0 ? (
+                                        <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--font-sm)' }}>No signals for this specialty yet.</div>
+                                    ) : (
+                                        <>
+                                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+                                                <button className="btn btn-ghost btn-sm" onClick={() => selectAll(key, types)}>Select all</button>
+                                                <button className="btn btn-ghost btn-sm" onClick={() => clearAll(key)}>Clear all</button>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                                                {Object.entries(
+                                                    types.reduce<Record<string, SignalType[]>>((acc, st) => {
+                                                        const cat = st.category ?? 'Other';
+                                                        if (!acc[cat]) acc[cat] = [];
+                                                        acc[cat].push(st);
+                                                        return acc;
+                                                    }, {})
+                                                ).map(([cat, catTypes]) => (
+                                                    <div key={cat}>
+                                                        <div style={{
+                                                            fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                                                            letterSpacing: '0.07em', color: meta.color,
+                                                            marginBottom: 6, paddingBottom: 4,
+                                                            borderBottom: `1px solid ${meta.color}25`,
+                                                        }}>
+                                                            {cat}
+                                                        </div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 2 }}>
+                                                            {catTypes.map(st => {
+                                                                const checked = selectedSet.has(st.id);
+                                                                return (
+                                                                    <div key={st.id} onClick={() => toggle(key, st.id)} style={{
+                                                                        display: 'flex', alignItems: 'center', gap: 8,
+                                                                        cursor: 'pointer', fontSize: 'var(--font-sm)',
+                                                                        color: checked ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                                                        padding: '4px 6px', borderRadius: 4,
+                                                                        background: checked ? `${meta.color}12` : 'transparent',
+                                                                        transition: 'background 0.15s, color 0.15s',
+                                                                        userSelect: 'none',
+                                                                    }}>
+                                                                        <span style={{
+                                                                            width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                                                                            border: `1.5px solid ${checked ? meta.color : 'var(--border-strong)'}`,
+                                                                            background: checked ? meta.color : 'transparent',
+                                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                            transition: 'all 0.15s', opacity: checked ? 0.85 : 1,
+                                                                        }}>
+                                                                            {checked && (
+                                                                                <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+                                                                                    <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                                                                </svg>
+                                                                            )}
+                                                                        </span>
+                                                                        {st.label}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+
+            {dirty && (
+                <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    background: 'var(--bg-surface)', border: '1px solid var(--border-default)',
+                    borderRadius: 'var(--radius-lg)', padding: 'var(--space-3) var(--space-5)',
+                }}>
+                    <span style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)' }}>Unsaved changes</span>
+                    <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => {
+                            setEnabledSpecialties(initialSpecialties);
+                            setSelections({
+                                HEPATOLOGY: new Set(initialSignals.HEPATOLOGY ?? []),
+                                ONCOLOGY:   new Set(initialSignals.ONCOLOGY   ?? []),
+                                HEMATOLOGY: new Set(initialSignals.HEMATOLOGY ?? []),
+                            });
+                            setDirty(false);
+                        }}>Discard</button>
+                        <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+                            {saving ? 'Saving…' : 'Save'}
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -531,6 +861,14 @@ export default function SettingsPage() {
             {section === 'general' && <GeneralSection siteName={data.site.name} siteId={data.site.id} />}
             {section === 'profile' && (
                 isManager ? <ProfileSection data={data} />
+                : <div className="empty-state"><h3>Manager access required</h3></div>
+            )}
+            {section === 'trial_profile' && (
+                isManager ? <TrialProfileSection data={data} />
+                : <div className="empty-state"><h3>Manager access required</h3></div>
+            )}
+            {section === 'preview' && (
+                isManager ? <PreviewSection />
                 : <div className="empty-state"><h3>Manager access required</h3></div>
             )}
             {section === 'team' && (

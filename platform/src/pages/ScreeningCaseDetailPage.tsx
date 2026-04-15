@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { StatusBadge, formatDate, ALL_STATUSES, STATUS_CONFIG, isOverdue } from '../utils';
+import { Select } from '../components/Select';
 import type { ScreeningCaseDetail, PatientVisit, PendingItem, ScreenFailReason } from '../types';
 
 interface StatusForm { status: string; next_action_date: string; }
@@ -361,9 +362,11 @@ export default function ScreeningCaseDetailPage() {
                         <form onSubmit={handleStatusUpdate}>
                             <div className="form-group">
                                 <label className="form-label">Status</label>
-                                <select className="form-select" value={statusForm.status} onChange={e => setStatusForm({ ...statusForm, status: e.target.value })}>
-                                    {ALL_STATUSES.map(s => <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>)}
-                                </select>
+                                <Select
+                                    value={statusForm.status}
+                                    onChange={val => setStatusForm({ ...statusForm, status: val })}
+                                    options={ALL_STATUSES.map(s => ({ value: s, label: STATUS_CONFIG[s].label }))}
+                                />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Next Action Date</label>
@@ -389,10 +392,14 @@ export default function ScreeningCaseDetailPage() {
                         <form onSubmit={handleScreenFail}>
                             <div className="form-group">
                                 <label className="form-label">Fail Reason Code *</label>
-                                <select className="form-select" value={failForm.fail_reason_id} onChange={e => setFailForm({ ...failForm, fail_reason_id: e.target.value })} required>
-                                    <option value="">Select reason…</option>
-                                    {failReasons.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-                                </select>
+                                <Select
+                                    value={failForm.fail_reason_id}
+                                    onChange={val => setFailForm({ ...failForm, fail_reason_id: val })}
+                                    options={[
+                                        { value: '', label: 'Select reason…' },
+                                        ...failReasons.map(r => ({ value: r.id, label: r.label })),
+                                    ]}
+                                />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Supporting Details</label>
@@ -452,9 +459,11 @@ export default function ScreeningCaseDetailPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Type *</label>
-                                    <select className="form-select" value={pendingForm.type} onChange={e => setPendingForm({ ...pendingForm, type: e.target.value })} required>
-                                        {['LAB', 'IMAGING', 'RECORDS', 'PROCEDURE', 'CONSULT'].map(t => <option key={t} value={t}>{t}</option>)}
-                                    </select>
+                                    <Select
+                                        value={pendingForm.type}
+                                        onChange={val => setPendingForm({ ...pendingForm, type: val })}
+                                        options={['LAB', 'IMAGING', 'RECORDS', 'PROCEDURE', 'CONSULT'].map(t => ({ value: t, label: t }))}
+                                    />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Due Date</label>

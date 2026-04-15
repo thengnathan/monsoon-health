@@ -188,7 +188,9 @@ export const ALL_SPECIALTY_KEYS = Object.keys(SPECIALTY_TEMPLATES) as SpecialtyK
 
 export interface SitePatientProfileConfig {
     specialties: SpecialtyKey[];
-    enabled_options: string[]; // option ids the manager has checked
+    enabled_options: string[];
+    trial_profile_specialties?: SpecialtyKey[];
+    trial_profile_signals?: Partial<Record<SpecialtyKey, string[]>>;
 }
 
 export const DEFAULT_ENABLED_BY_SPECIALTY: Record<SpecialtyKey, string[]> = {

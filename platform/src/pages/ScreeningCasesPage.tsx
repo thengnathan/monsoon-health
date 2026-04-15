@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { StatusBadge, formatDate, ALL_STATUSES, STATUS_CONFIG } from '../utils';
+import { Select } from '../components/Select';
 import type { ScreeningCaseRow, Trial } from '../types';
 
 export default function ScreeningCasesPage() {
@@ -38,10 +39,15 @@ export default function ScreeningCasesPage() {
                         </button>
                     ))}
                 </div>
-                <select className="form-select" style={{ width: 'auto', minWidth: 200, fontSize: 'var(--font-sm)' }} value={trialFilter} onChange={e => setTrialFilter(e.target.value)}>
-                    <option value="">All Trials</option>
-                    {trials.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
+                <Select
+                    value={trialFilter}
+                    onChange={setTrialFilter}
+                    options={[
+                        { value: '', label: 'All Trials' },
+                        ...trials.map(t => ({ value: t.id, label: t.name })),
+                    ]}
+                    style={{ minWidth: 200, width: 'auto' }}
+                />
             </div>
 
             {loading ? (

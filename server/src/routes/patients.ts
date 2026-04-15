@@ -460,7 +460,7 @@ router.get('/:id/documents/:docId/download', async (req: Request, res: Response)
     const { data, error } = await supabase.storage.from('patient-documents').createSignedUrl(doc.storage_path, 3600);
     if (error) { res.status(500).json({ error: 'Could not generate download URL' }); return; }
 
-    res.redirect(data.signedUrl);
+    res.json({ url: data.signedUrl });
 });
 
 router.delete('/:id/documents/:docId', async (req: Request, res: Response) => {
@@ -732,7 +732,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
     let p = 0;
 
     const body = req.body as Record<string, unknown>;
-    for (const field of ['first_name', 'last_name', 'dob', 'internal_identifier', 'referral_source_id', 'referral_date', 'notes']) {
+    for (const field of ['first_name', 'last_name', 'dob', 'internal_identifier', 'referral_source_id', 'referral_date', 'notes', 'specialty']) {
         if (body[field] !== undefined) { updates.push(`${field} = $${++p}`); values.push(body[field]); }
     }
 

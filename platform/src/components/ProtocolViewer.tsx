@@ -1,4 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { Select } from './Select';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -8,11 +10,6 @@ interface CriterionSubitem {
     subitems?: CriterionSubitem[];
 }
 
-interface InclusionCriterion {
-    number: number;
-    text: string;
-    subitems?: CriterionSubitem[];
-}
 
 interface ExclusionCategory {
     category: string | null;
@@ -55,7 +52,8 @@ interface StructuredData {
     extracted_visits?: ExtractedVisit[];
     inclusion_criteria?: string[];
     exclusion_criteria?: string[];
-    inclusion_structured?: InclusionCriterion[];
+    // New format: grouped by cohort/arm (same shape as exclusion_structured)
+    inclusion_structured?: ExclusionCategory[];
     exclusion_structured?: ExclusionCategory[];
     soa_footnotes?: SoaFootnote[];
 }
@@ -84,30 +82,75 @@ function formatDayLabel(visit: ExtractedVisit): string {
 }
 
 function FootnoteTooltip({ keys, footnotes }: { keys: string[]; footnotes: SoaFootnote[] }) {
-    const [open, setOpen] = useState(false);
+    const [pos, setPos] = useState<{ top: number; left: number; flipUp: boolean } | null>(null);
+    const triggerRef = useRef<HTMLElement>(null);
+
+    const show = useCallback(() => {
+        const rect = triggerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const flipUp = rect.top > window.innerHeight / 2;
+        setPos({
+            top: flipUp ? rect.top - 8 : rect.bottom + 8,
+            left: Math.min(rect.left, window.innerWidth - 340),
+            flipUp,
+        });
+    }, []);
+
+    const hide = useCallback(() => setPos(null), []);
+
+    // Close on scroll so tooltip doesn't linger in the wrong spot
+    useEffect(() => {
+        if (!pos) return;
+        window.addEventListener('scroll', hide, true);
+        return () => window.removeEventListener('scroll', hide, true);
+    }, [pos, hide]);
+
     if (!keys.length) return null;
     const defs = keys.map(k => footnotes.find(f => f.key === k)).filter(Boolean) as SoaFootnote[];
+    if (!defs.length) return null;
+
     return (
-        <span style={{ position: 'relative', display: 'inline-block', marginLeft: 2 }}>
+        <>
             <sup
-                style={{ color: 'var(--primary)', cursor: 'pointer', fontSize: '0.7em', fontWeight: 600 }}
-                onMouseEnter={() => setOpen(true)}
-                onMouseLeave={() => setOpen(false)}
+                ref={triggerRef}
+                style={{ color: 'var(--accent-sea-blue, var(--accent))', cursor: 'help', fontSize: '0.7em', fontWeight: 700, marginLeft: 1 }}
+                onMouseEnter={show}
+                onMouseLeave={hide}
             >
                 {keys.join(',')}
             </sup>
-            {open && defs.length > 0 && (
-                <span style={{
-                    position: 'absolute', bottom: '100%', left: 0, zIndex: 50,
-                    background: 'var(--bg-primary)', border: '1px solid var(--border)',
-                    borderRadius: 6, padding: '8px 10px', minWidth: 220, maxWidth: 320,
-                    fontSize: 'var(--font-xs)', color: 'var(--text-secondary)', lineHeight: 1.5,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)', whiteSpace: 'normal',
-                }}>
-                    {defs.map(d => <div key={d.key}><strong>{d.key}:</strong> {d.text}</div>)}
-                </span>
+
+            {pos && createPortal(
+                <div style={{
+                    position: 'fixed',
+                    top: pos.flipUp ? undefined : pos.top,
+                    bottom: pos.flipUp ? window.innerHeight - pos.top : undefined,
+                    left: pos.left,
+                    zIndex: 99999,
+                    background: 'var(--surface-elevated, var(--bg-surface-raised))',
+                    border: '1px solid var(--border-default)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '10px 12px',
+                    minWidth: 220,
+                    maxWidth: 340,
+                    fontSize: 'var(--font-xs)',
+                    color: 'var(--text-secondary)',
+                    lineHeight: 1.6,
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                    pointerEvents: 'none',
+                }}
+                    onMouseEnter={show}
+                    onMouseLeave={hide}
+                >
+                    {defs.map(d => (
+                        <div key={d.key} style={{ marginBottom: defs.length > 1 ? 6 : 0 }}>
+                            <strong style={{ color: 'var(--text-primary)' }}>{d.key}:</strong> {d.text}
+                        </div>
+                    ))}
+                </div>,
+                document.body
             )}
-        </span>
+        </>
     );
 }
 
@@ -155,22 +198,20 @@ function VisitScheduleTab({ visits, footnotes, animating }: { visits: ExtractedV
             {/* Jump to visit dropdown */}
             {visits.length > 3 && (
                 <div style={{ marginBottom: 'var(--space-3)' }}>
-                    <select
-                        className="form-input"
-                        style={{ maxWidth: 280 }}
+                    <Select
                         value={selectedVisit ?? ''}
-                        onChange={e => scrollTo(e.target.value)}
-                    >
-                        <option value="">Jump to visit...</option>
-                        {visits.map(v => (
-                            <option key={v.visit_name} value={v.visit_name}>{v.visit_name}</option>
-                        ))}
-                    </select>
+                        onChange={val => scrollTo(val)}
+                        options={[
+                            { value: '', label: 'Jump to visit…' },
+                            ...visits.map(v => ({ value: v.visit_name, label: v.visit_name })),
+                        ]}
+                        style={{ maxWidth: 280 }}
+                    />
                 </div>
             )}
 
             {/* Scroll container — separate from flex layout so cards never compress */}
-            <div ref={scrollContainerRef} style={{ maxHeight: 600, overflowY: 'auto', paddingRight: 4 }}>
+            <div ref={scrollContainerRef} style={{ maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 {visits.map((visit, visitIndex) => {
                     const isExpanded = expandedVisits.has(visit.visit_name);
@@ -189,40 +230,46 @@ function VisitScheduleTab({ visits, footnotes, animating }: { visits: ExtractedV
                                 onClick={hasContent ? () => toggleVisit(visit.visit_name) : undefined}
                                 style={{
                                     padding: 'var(--space-3) var(--space-4)',
-                                    background: 'var(--bg-secondary)',
-                                    borderBottom: isExpanded ? '1px solid var(--border)' : 'none',
-                                    display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+                                    background: 'var(--surface-elevated, var(--bg-surface-raised))',
+                                    borderBottom: isExpanded ? '1px solid var(--border-default)' : 'none',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)',
                                     cursor: hasContent ? 'pointer' : 'default',
                                     userSelect: 'none',
                                 }}
                             >
-                                <span style={{ fontWeight: 600, fontSize: 'var(--font-base)', color: 'var(--text-primary)' }}>
-                                    {visit.visit_name}
-                                </span>
-                                {visit.visit_label && (
-                                    <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', background: 'var(--border)', borderRadius: 4, padding: '1px 6px' }}>
-                                        {visit.visit_label}
+                                {/* Left: name + day */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0 }}>
+                                    <span style={{ fontWeight: 600, fontSize: 'var(--font-sm)', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {visit.visit_name}
                                     </span>
-                                )}
-                                <span style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', marginLeft: 4 }}>
-                                    {formatDayLabel(visit)}
-                                </span>
-                                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', flexShrink: 0 }}>
+                                        {formatDayLabel(visit)}
+                                    </span>
+                                    {visit.visit_label && (
+                                        <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', background: 'var(--border-strong)', borderRadius: 3, padding: '1px 5px', flexShrink: 0 }}>
+                                            {visit.visit_label}
+                                        </span>
+                                    )}
+                                </div>
+
+                                {/* Right: badges + count + chevron */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                                     {visit.is_screening && (
-                                        <span className="badge badge-info" style={{ fontSize: 'var(--font-xs)' }}>Screening</span>
+                                        <span className="badge badge-info" style={{ fontSize: 11 }}>Screening</span>
                                     )}
                                     {visit.is_randomization && (
-                                        <span className="badge badge-success" style={{ fontSize: 'var(--font-xs)' }}>Randomization</span>
+                                        <span className="badge badge-success" style={{ fontSize: 11 }}>Randomization</span>
                                     )}
                                     {assessmentCount > 0 && (
-                                        <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 10, padding: '1px 8px' }}>
-                                            {assessmentCount} assessments
+                                        <span style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'var(--surface-secondary, var(--bg-surface))', border: '1px solid var(--border-default)', borderRadius: 10, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                            {assessmentCount}
                                         </span>
                                     )}
                                     {hasContent && (
-                                        <span style={{ fontSize: 11, color: 'var(--text-tertiary)', flexShrink: 0 }}>
-                                            {isExpanded ? '▲' : '▼'}
-                                        </span>
+                                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8"
+                                            style={{ color: 'var(--text-tertiary)', transition: 'transform 0.15s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', flexShrink: 0 }}>
+                                            <path d="M2 4.5l4 3.5 4-3.5" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
                                     )}
                                 </div>
                             </div>
@@ -233,7 +280,7 @@ function VisitScheduleTab({ visits, footnotes, animating }: { visits: ExtractedV
                                     <div style={{ padding: 'var(--space-3) var(--space-4)' }}>
                                         {visit.assessments.map(cat => (
                                             <div key={cat.category} style={{ marginBottom: 'var(--space-3)' }}>
-                                                <div style={{ fontSize: 'var(--font-xs)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--primary)', marginBottom: 6 }}>
+                                                <div style={{ fontSize: 'var(--font-xs)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-sea-blue, var(--accent))', marginBottom: 6 }}>
                                                     {cat.category}
                                                 </div>
                                                 <ul style={{ margin: 0, paddingLeft: 16, listStyle: 'disc' }}>
@@ -302,7 +349,9 @@ function CriteriaTab({ data, animating }: { data: StructuredData; animating?: bo
     const [inclusionOpen, setInclusionOpen] = useState(true);
     const [exclusionOpen, setExclusionOpen] = useState(true);
     const hasStructured = (data.inclusion_structured?.length ?? 0) > 0 || (data.exclusion_structured?.length ?? 0) > 0;
-    const inclusionCount = hasStructured ? (data.inclusion_structured?.length ?? 0) : (data.inclusion_criteria?.length ?? 0);
+    const inclusionCount = hasStructured
+        ? (data.inclusion_structured?.reduce((n, cat) => n + cat.criteria.length, 0) ?? 0)
+        : (data.inclusion_criteria?.length ?? 0);
     const exclusionCount = hasStructured
         ? (data.exclusion_structured?.reduce((n, cat) => n + cat.criteria.length, 0) ?? 0)
         : (data.exclusion_criteria?.length ?? 0);
@@ -324,7 +373,7 @@ function CriteriaTab({ data, animating }: { data: StructuredData; animating?: bo
                 {inclusionOpen && (
                     <div style={{ padding: 'var(--space-4)' }}>
                         {hasStructured && data.inclusion_structured?.length ? (
-                            <InclusionStructuredList items={data.inclusion_structured} animating={animating} />
+                            <ExclusionStructuredList categories={data.inclusion_structured} animating={animating} />
                         ) : (
                             <FlatCriteriaList items={data.inclusion_criteria ?? []} animating={animating} />
                         )}
@@ -358,22 +407,6 @@ function CriteriaTab({ data, animating }: { data: StructuredData; animating?: bo
     );
 }
 
-function InclusionStructuredList({ items, animating, startIndex = 0 }: { items: InclusionCriterion[]; animating?: boolean; startIndex?: number }) {
-    return (
-        <ol style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {items.map((item, i) => (
-                <li
-                    key={item.number}
-                    className={animating ? 'criterion-reveal' : undefined}
-                    style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, ...(animating ? { animationDelay: `${(startIndex + i) * 60}ms` } : {}) }}
-                >
-                    {item.text}
-                    {item.subitems?.length ? <SubitemList items={item.subitems} /> : null}
-                </li>
-            ))}
-        </ol>
-    );
-}
 
 function ExclusionStructuredList({ categories, animating, startIndex = 0 }: { categories: ExclusionCategory[]; animating?: boolean; startIndex?: number }) {
     let globalIndex = startIndex;

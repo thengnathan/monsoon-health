@@ -43,6 +43,7 @@ export interface VisitAssessmentCategory {
 }
 
 export interface ExtractedSignalRule {
+    cohort?: string | null;              // cohort/arm label (e.g. "Cohort D"), null = main study / all cohorts
     field?: string;                      // machine-readable identifier (e.g. "platelet_count")
     label: string;                       // short display label (e.g. "Platelet Count")
     unit?: string;                       // measurement unit (e.g. "/μL", "years", "%")
@@ -92,7 +93,9 @@ export interface StructuredProtocol {
     extracted_signal_rules?: ExtractedSignalRule[];
 
     // Hierarchical structured criteria for rich UI rendering
-    inclusion_structured?: InclusionCriterion[];
+    // inclusion_structured uses the same grouped shape as exclusion_structured
+    // (category = cohort/arm label, null = applies to all)
+    inclusion_structured?: ExclusionCategory[];
     exclusion_structured?: ExclusionCategory[];
 
     // SoA footnote definitions

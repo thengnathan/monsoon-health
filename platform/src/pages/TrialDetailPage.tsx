@@ -3,10 +3,13 @@ import DOMPurify from 'dompurify';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
+import { useSiteConfig } from '../contexts/SiteConfigContext';
 import { StatusBadge, formatDate } from '../utils';
 import type { TrialDetail, SignalType, VisitTemplate } from '../types';
 import ProtocolViewer from '../components/ProtocolViewer';
 import PDFViewerModal from '../components/PDFViewerModal';
+import ProtocolLoadingAnimation from '../components/ProtocolLoadingAnimation';
+import { Select } from '../components/Select';
 
 
 interface VisitForm {
@@ -160,22 +163,17 @@ function RichTextEditor({ value, onChange }: { value: string; onChange: (v: stri
                 background: 'var(--bg-secondary)',
             }}>
                 {/* Font size */}
-                <select
-                    defaultValue="3"
-                    onChange={e => { exec('fontSize', e.target.value); editorRef.current?.focus(); }}
-                    onMouseDown={e => e.stopPropagation()}
-                    style={{
-                        fontSize: 12, padding: '3px 5px', marginRight: 2,
-                        border: '1px solid var(--border)', borderRadius: 3,
-                        background: 'var(--bg-primary)', color: 'var(--text-secondary)',
-                        cursor: 'pointer',
-                    }}
-                >
-                    <option value="1">Small</option>
-                    <option value="3">Normal</option>
-                    <option value="4">Large</option>
-                    <option value="5">Larger</option>
-                </select>
+                <Select
+                    value={editorFontSize}
+                    onChange={val => { setEditorFontSize(val); exec('fontSize', val); editorRef.current?.focus(); }}
+                    options={[
+                        { value: '1', label: 'Small' },
+                        { value: '3', label: 'Normal' },
+                        { value: '4', label: 'Large' },
+                        { value: '5', label: 'Larger' },
+                    ]}
+                    style={{ width: 'auto', minWidth: 80, fontSize: 12, padding: '3px 8px', marginRight: 2 }}
+                />
 
                 {divider}
 
@@ -266,10 +264,7 @@ function RichTextEditor({ value, onChange }: { value: string; onChange: (v: stri
 // ── Signal Rule Card ─────────────────────────────────────────────────────────
 
 interface SignalRuleCardProps {
-    chipLabel: string;
-    chipStyle: React.CSSProperties;
     label: string;
-    field?: string | null;
     threshold: string;
     isMatch: boolean;
     citationText: string | null;
@@ -278,25 +273,13 @@ interface SignalRuleCardProps {
     onDelete: () => void;
 }
 
-function SignalRuleCard({ chipLabel, chipStyle, label, field, threshold, isMatch, citationText, isAI, onEdit, onDelete }: SignalRuleCardProps) {
+function SignalRuleCard({ label, threshold, isMatch, citationText, isAI, onEdit, onDelete }: SignalRuleCardProps) {
     const [citationExpanded, setCitationExpanded] = useState(false);
 
     return (
         <div className="card" style={{ padding: 'var(--space-3) var(--space-4)' }}>
-            {/* Top row: chip + label + threshold + badges + actions */}
+            {/* Top row: label + threshold + badges + actions */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                <span style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: '0.06em',
-                    padding: '2px 7px',
-                    borderRadius: 4,
-                    flexShrink: 0,
-                    ...chipStyle,
-                }}>
-                    {chipLabel}
-                </span>
-
                 <span style={{ fontWeight: 600, fontSize: 'var(--font-base)', flex: 1, minWidth: 0 }}>
                     {label}
                 </span>
@@ -344,12 +327,6 @@ function SignalRuleCard({ chipLabel, chipStyle, label, field, threshold, isMatch
                 </button>
             </div>
 
-            {/* Field identifier */}
-            {field && (
-                <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', marginTop: 3 }}>
-                    field: {field}
-                </div>
-            )}
 
             {/* TEXT_MATCH threshold shown below */}
             {isMatch && threshold && (
@@ -389,6 +366,7 @@ export default function TrialDetailPage() {
     const [loading, setLoading] = useState(true);
     const [showVisitModal, setShowVisitModal] = useState(false);
     const [showSignalModal, setShowSignalModal] = useState(false);
+    const [editorFontSize, setEditorFontSize] = useState('3');
     const [pdfViewer, setPdfViewer] = useState<{ url: string; filename: string } | null>(null);
     const [reextracting, setReextracting] = useState(false);
     const [extractionPhase, setExtractionPhase] = useState<'idle' | 'waiting' | 'animating'>('idle');
@@ -403,12 +381,14 @@ export default function TrialDetailPage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const navigate = useNavigate();
     const { addToast } = useToast();
+    const { profileConfig } = useSiteConfig();
 
-    const loadTrial = () => {
-        if (!id) return;
-        api.getTrial(id).then(data => {
+    const loadTrial = (): Promise<TrialDetail | null> => {
+        if (!id) return Promise.resolve(null);
+        return api.getTrial(id).then(data => {
             setTrial(data);
-        }).catch(console.error).finally(() => setLoading(false));
+            return data;
+        }).catch(err => { console.error(err); return null; }).finally(() => setLoading(false));
     };
 
     // Clear any running animation timers
@@ -443,29 +423,68 @@ export default function TrialDetailPage() {
         animationTimersRef.current.push(t);
     };
 
-    // Poll after extraction starts; stop when data arrives or after ~45s
-    const startExtractionPoll = () => {
+    // Poll after extraction starts.
+    // Phase 1 (Call 1): stop overlay once visit_templates / signal_rules appear → start animation.
+    // Phase 2 (Call 2): keep polling silently until structured_data.extracted_visits arrives,
+    //   updating trial state each tick so ProtocolViewer populates without a manual reload.
+    // Hard timeout: 90s (30 × 3s) to handle large protocols.
+    const SESSION_KEY = `extracting_${id}`;
+
+    const startExtractionPoll = ({ silent = false }: { silent?: boolean } = {}) => {
         if (extractionPollRef.current) clearInterval(extractionPollRef.current);
-        setExtractionPhase('waiting');
+        if (!silent) setExtractionPhase('waiting');
+        sessionStorage.setItem(SESSION_KEY, Date.now().toString());
         let attempts = 0;
+        let animationStarted = silent; // silent mode: skip animation since we're resuming mid-extraction
+
         extractionPollRef.current = setInterval(async () => {
             attempts++;
             try {
                 const data = await api.getTrial(id!);
-                const hasData =
+
+                const hasCall1Data =
                     (data.visit_templates?.length > 0) ||
                     (data.signal_rules?.length > 0) ||
                     (data.protocol?.structured_data?.inclusion_criteria?.length ?? 0) > 0;
-                if (hasData) {
-                    clearInterval(extractionPollRef.current!);
-                    setTrial(data);
+
+                // Call 2 is done when at least one visit has assessments populated.
+                // extracted_visits alone isn't enough — savePartial already writes those after Call 1.
+                const hasCall2Data =
+                    data.protocol?.structured_data?.extracted_visits?.some(
+                        (v: { assessments?: unknown[] }) => (v.assessments?.length ?? 0) > 0
+                    ) ?? false;
+
+                // Always push the latest data into state so the page auto-populates
+                if (hasCall1Data) setTrial(data);
+
+                // Dismiss overlay and start card animations as soon as Call 1 lands
+                if (hasCall1Data && !animationStarted) {
+                    animationStarted = true;
                     setReextracting(false);
                     setExtractionPhase('animating');
                     startSequentialAnimation(data);
-                } else if (attempts >= 15) {
+                }
+
+                // Stop polling once full data (both calls) is present, or on hard timeout
+                if (hasCall2Data || attempts >= 60) {
                     clearInterval(extractionPollRef.current!);
+                    sessionStorage.removeItem(SESSION_KEY);
+                    setTrial(data); // final sync
+                    if (!animationStarted) {
+                        // Edge case: Call 2 arrived before Call 1 data was detected
+                        setReextracting(false);
+                        setExtractionPhase('animating');
+                        startSequentialAnimation(data);
+                    }
+                    preExtractionBackupRef.current = null;
+                    return;
+                }
+
+                // Timeout with no data at all
+                if (!hasCall1Data && attempts >= 40) {
+                    clearInterval(extractionPollRef.current!);
+                    sessionStorage.removeItem(SESSION_KEY);
                     setReextracting(false);
-                    // Restore backup on timeout
                     if (preExtractionBackupRef.current) {
                         setTrial(preExtractionBackupRef.current);
                         addToast('Extraction timed out — previous data restored', 'error');
@@ -475,6 +494,7 @@ export default function TrialDetailPage() {
                 }
             } catch {
                 clearInterval(extractionPollRef.current!);
+                sessionStorage.removeItem(SESSION_KEY);
                 setReextracting(false);
                 if (preExtractionBackupRef.current) {
                     setTrial(preExtractionBackupRef.current);
@@ -487,7 +507,22 @@ export default function TrialDetailPage() {
     };
 
     useEffect(() => {
-        loadTrial();
+        loadTrial().then(data => {
+            if (!data || !id) return;
+            // Resume silent poll if user navigated away during extraction and came back
+            const key = `extracting_${id}`;
+            const ts = sessionStorage.getItem(key);
+            if (ts) {
+                const ageMs = Date.now() - parseInt(ts, 10);
+                const extractionDone = (data.protocol?.structured_data?.extracted_visits?.length ?? 0) > 0;
+                if (!extractionDone && ageMs < 5 * 60 * 1000) {
+                    startExtractionPoll({ silent: true });
+                } else {
+                    // Either finished or too old — clean up stale key
+                    sessionStorage.removeItem(key);
+                }
+            }
+        });
         api.getSignalTypes().then(setSignalTypes).catch(() => {});
         return () => {
             if (extractionPollRef.current) clearInterval(extractionPollRef.current);
@@ -633,6 +668,24 @@ export default function TrialDetailPage() {
 
     return (
         <div>
+            {/* Protocol extraction overlay — frosted glass so page skeleton shows through */}
+            {(reextracting || extractionPhase === 'waiting') && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 500,
+                    background: 'rgba(10, 13, 20, 0.72)',
+                    backdropFilter: 'blur(12px)',
+                    WebkitBackdropFilter: 'blur(12px)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                }}>
+                    <ProtocolLoadingAnimation width={600} height={440} />
+                </div>
+            )}
+
             <div className="detail-header">
                 <div className="detail-header-info">
                     <h1>{trial.name}</h1>
@@ -874,43 +927,110 @@ export default function TrialDetailPage() {
                                     <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-tertiary)' }}>No signal rules configured. Add rules to define eligibility thresholds.</p>
                                 </div>
                             ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                                    {trial.signal_rules.map((rule, ruleIndex) => {
-                                        const isBetween = rule.operator === 'BETWEEN';
-                                        const isMatch = rule.operator === 'TEXT_MATCH';
-                                        const chipType = isBetween ? 'BETWEEN' : isMatch ? 'MATCH' : 'NUMERIC';
-                                        const chipStyles: Record<string, React.CSSProperties> = {
-                                            NUMERIC: { background: '#dbeafe', color: '#1d4ed8' },
-                                            BETWEEN: { background: '#ede9fe', color: '#7c3aed' },
-                                            MATCH:   { background: '#fef3c7', color: '#b45309' },
-                                        };
-                                        const thresholdDisplay = isBetween
-                                            ? `${rule.min_value ?? '?'} – ${rule.max_value ?? '?'}${rule.unit ? ' ' + rule.unit : ''}`
-                                            : isMatch
-                                            ? (rule.threshold_text || rule.criteria_text || '')
-                                            : `${operatorLabels[rule.operator] || rule.operator} ${rule.threshold_number ?? rule.threshold_text ?? ''}${rule.unit ? ' ' + rule.unit : ''}`;
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+                                    {(() => {
+                                        const specialty = trial.specialty as string | null;
+                                        const configuredIds = specialty
+                                            ? profileConfig?.trial_profile_signals?.[specialty as keyof typeof profileConfig.trial_profile_signals]
+                                            : undefined;
+                                        const configuredLabels = configuredIds?.length
+                                            ? new Set(signalTypes.filter(st => configuredIds.includes(st.id)).map(st => st.label.toLowerCase()))
+                                            : null;
+                                        const filtered = configuredLabels
+                                            ? trial.signal_rules.filter(r =>
+                                                (r.signal_type_id && configuredIds!.includes(r.signal_type_id)) ||
+                                                (r.signal_label && configuredLabels.has(r.signal_label.toLowerCase()))
+                                            )
+                                            : trial.signal_rules;
 
-                                        return (
-                                            <div
-                                                key={rule.id}
-                                                className={extractionPhase === 'animating' ? 'rule-fade-in' : undefined}
-                                                style={extractionPhase === 'animating' ? { animationDelay: `${ruleIndex * 100}ms` } : undefined}
-                                            >
-                                            <SignalRuleCard
-                                                chipLabel={chipType}
-                                                chipStyle={chipStyles[chipType]}
-                                                label={rule.signal_label || ''}
-                                                field={rule.field}
-                                                threshold={thresholdDisplay}
-                                                isMatch={isMatch}
-                                                citationText={rule.criteria_text || null}
-                                                isAI={rule.source === 'ai_extracted'}
-                                                onEdit={() => { setEditingRule(rule); setSignalForm({ mode: rule.source === 'ai_extracted' || !rule.signal_type_id ? 'freeform' : 'catalog', signal_type_id: rule.signal_type_id || '', signal_label: rule.signal_label || '', criteria_text: rule.criteria_text || '', operator: rule.operator, threshold_number: rule.threshold_number?.toString() ?? '', min_value: rule.min_value?.toString() ?? '', max_value: rule.max_value?.toString() ?? '', unit: rule.unit ?? '' }); }}
-                                                onDelete={() => handleDeleteSignal(rule.id)}
-                                            />
-                                            </div>
-                                        );
-                                    })}
+                                        // Group by cohort first, then by category
+                                        const byCohort = filtered.reduce<Record<string, typeof trial.signal_rules>>((acc, rule) => {
+                                            const cohort = rule.cohort ?? 'Main Study';
+                                            if (!acc[cohort]) acc[cohort] = [];
+                                            acc[cohort].push(rule);
+                                            return acc;
+                                        }, {});
+
+                                        // Sort so "Main Study" always appears first
+                                        const cohortOrder = Object.keys(byCohort).sort((a, b) => {
+                                            if (a === 'Main Study') return -1;
+                                            if (b === 'Main Study') return 1;
+                                            return a.localeCompare(b);
+                                        });
+
+                                        const multiCohort = cohortOrder.length > 1;
+                                        let globalRuleIndex = 0;
+
+                                        return cohortOrder.map(cohort => {
+                                            const cohortRules = byCohort[cohort];
+                                            const byCategory = cohortRules.reduce<Record<string, typeof trial.signal_rules>>((acc, rule) => {
+                                                const cat = rule.category ?? 'Other';
+                                                if (!acc[cat]) acc[cat] = [];
+                                                acc[cat].push(rule);
+                                                return acc;
+                                            }, {});
+
+                                            return (
+                                                <div key={cohort}>
+                                                    {multiCohort && (
+                                                        <div style={{
+                                                            fontSize: 'var(--font-sm)', fontWeight: 700,
+                                                            color: 'var(--text-primary)',
+                                                            marginBottom: 'var(--space-3)',
+                                                            paddingBottom: 6,
+                                                            borderBottom: '2px solid var(--border)',
+                                                        }}>
+                                                            {cohort}
+                                                        </div>
+                                                    )}
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                                                        {Object.entries(byCategory).map(([cat, rules]) => (
+                                                            <div key={cat}>
+                                                                <div style={{
+                                                                    fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                                                                    letterSpacing: '0.07em', color: 'var(--text-tertiary)',
+                                                                    marginBottom: 'var(--space-2)', paddingBottom: 4,
+                                                                    borderBottom: '1px solid var(--border-subtle)',
+                                                                }}>
+                                                                    {cat}
+                                                                </div>
+                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                                                    {rules.map(rule => {
+                                                                        const ruleIndex = globalRuleIndex++;
+                                                                        const isBetween = rule.operator === 'BETWEEN';
+                                                                        const isMatch = rule.operator === 'TEXT_MATCH';
+                                                                        const thresholdDisplay = isBetween
+                                                                            ? `${rule.min_value ?? '?'} – ${rule.max_value ?? '?'}${rule.unit ? ' ' + rule.unit : ''}`
+                                                                            : isMatch
+                                                                            ? (rule.threshold_text || rule.criteria_text || '')
+                                                                            : `${operatorLabels[rule.operator] || rule.operator} ${rule.threshold_number ?? rule.threshold_text ?? ''}${rule.unit ? ' ' + rule.unit : ''}`;
+
+                                                                        return (
+                                                                            <div
+                                                                                key={rule.id}
+                                                                                className={extractionPhase === 'animating' ? 'rule-fade-in' : undefined}
+                                                                                style={extractionPhase === 'animating' ? { animationDelay: `${ruleIndex * 100}ms` } : undefined}
+                                                                            >
+                                                                                <SignalRuleCard
+                                                                                    label={rule.signal_label || ''}
+                                                                                    threshold={thresholdDisplay}
+                                                                                    isMatch={isMatch}
+                                                                                    citationText={rule.criteria_text || null}
+                                                                                    isAI={rule.source === 'ai_extracted'}
+                                                                                    onEdit={() => { setEditingRule(rule); setSignalForm({ mode: rule.source === 'ai_extracted' || !rule.signal_type_id ? 'freeform' : 'catalog', signal_type_id: rule.signal_type_id || '', signal_label: rule.signal_label || '', criteria_text: rule.criteria_text || '', operator: rule.operator, threshold_number: rule.threshold_number?.toString() ?? '', min_value: rule.min_value?.toString() ?? '', max_value: rule.max_value?.toString() ?? '', unit: rule.unit ?? '' }); }}
+                                                                                    onDelete={() => handleDeleteSignal(rule.id)}
+                                                                                />
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        });
+                                    })()}
                                 </div>
                             )}
                         </div>
@@ -1034,14 +1154,18 @@ export default function TrialDetailPage() {
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Operator *</label>
-                                <select className="form-select" value={signalForm.operator} onChange={e => setSignalForm({ ...signalForm, operator: e.target.value })}>
-                                    <option value="GTE">≥ Greater or equal</option>
-                                    <option value="LTE">≤ Less or equal</option>
-                                    <option value="EQ">= Equals</option>
-                                    <option value="BETWEEN">↔ Range (between)</option>
-                                    <option value="IN">in (list)</option>
-                                    <option value="TEXT_MATCH">≈ Qualitative match</option>
-                                </select>
+                                <Select
+                                    value={signalForm.operator}
+                                    onChange={val => setSignalForm({ ...signalForm, operator: val })}
+                                    options={[
+                                        { value: 'GTE', label: '≥ Greater or equal' },
+                                        { value: 'LTE', label: '≤ Less or equal' },
+                                        { value: 'EQ', label: '= Equals' },
+                                        { value: 'BETWEEN', label: '↔ Range (between)' },
+                                        { value: 'IN', label: 'in (list)' },
+                                        { value: 'TEXT_MATCH', label: '≈ Qualitative match' },
+                                    ]}
+                                />
                             </div>
                             {signalForm.operator === 'BETWEEN' ? (
                                 <div className="form-row">
@@ -1106,14 +1230,18 @@ export default function TrialDetailPage() {
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Operator *</label>
-                                        <select className="form-select" value={signalForm.operator} onChange={e => setSignalForm({ ...signalForm, operator: e.target.value })}>
-                                            <option value="GTE">≥ Greater or equal</option>
-                                            <option value="LTE">≤ Less or equal</option>
-                                            <option value="EQ">= Equals</option>
-                                            <option value="BETWEEN">↔ Range (between)</option>
-                                            <option value="IN">in (list)</option>
-                                            <option value="TEXT_MATCH">≈ Qualitative match</option>
-                                        </select>
+                                        <Select
+                                            value={signalForm.operator}
+                                            onChange={val => setSignalForm({ ...signalForm, operator: val })}
+                                            options={[
+                                                { value: 'GTE', label: '≥ Greater or equal' },
+                                                { value: 'LTE', label: '≤ Less or equal' },
+                                                { value: 'EQ', label: '= Equals' },
+                                                { value: 'BETWEEN', label: '↔ Range (between)' },
+                                                { value: 'IN', label: 'in (list)' },
+                                                { value: 'TEXT_MATCH', label: '≈ Qualitative match' },
+                                            ]}
+                                        />
                                     </div>
                                     {signalForm.operator === 'BETWEEN' ? (
                                         <div className="form-row">
@@ -1141,21 +1269,38 @@ export default function TrialDetailPage() {
                                 <>
                                     <div className="form-group">
                                         <label className="form-label">Signal Type *</label>
-                                        <select className="form-select" value={signalForm.signal_type_id} onChange={e => setSignalForm({ ...signalForm, signal_type_id: e.target.value })} required>
-                                            <option value="">Select signal…</option>
-                                            {signalTypes.map(st => <option key={st.id} value={st.id}>{st.label} ({st.data_type})</option>)}
-                                        </select>
+                                        <Select
+                                            value={signalForm.signal_type_id}
+                                            onChange={val => setSignalForm({ ...signalForm, signal_type_id: val })}
+                                            options={[
+                                                { value: '', label: 'Select signal…' },
+                                                ...(() => {
+                                                    const specialty = trial.specialty as string | null;
+                                                    const profileIds = specialty
+                                                        ? profileConfig?.trial_profile_signals?.[specialty as keyof typeof profileConfig.trial_profile_signals]
+                                                        : undefined;
+                                                    const filtered = profileIds?.length
+                                                        ? signalTypes.filter(st => profileIds.includes(st.id))
+                                                        : signalTypes;
+                                                    return filtered.map(st => ({ value: st.id, label: st.label }));
+                                                })(),
+                                            ]}
+                                        />
                                     </div>
                                     <div className="form-row">
                                         <div className="form-group">
                                             <label className="form-label">Operator *</label>
-                                            <select className="form-select" value={signalForm.operator} onChange={e => setSignalForm({ ...signalForm, operator: e.target.value })}>
-                                                <option value="GTE">≥ Greater or equal</option>
-                                                <option value="LTE">≤ Less or equal</option>
-                                                <option value="EQ">= Equals</option>
-                                                <option value="BETWEEN">↔ Range (between)</option>
-                                                <option value="IN">in (list)</option>
-                                            </select>
+                                            <Select
+                                                value={signalForm.operator}
+                                                onChange={val => setSignalForm({ ...signalForm, operator: val })}
+                                                options={[
+                                                    { value: 'GTE', label: '≥ Greater or equal' },
+                                                    { value: 'LTE', label: '≤ Less or equal' },
+                                                    { value: 'EQ', label: '= Equals' },
+                                                    { value: 'BETWEEN', label: '↔ Range (between)' },
+                                                    { value: 'IN', label: 'in (list)' },
+                                                ]}
+                                            />
                                         </div>
                                         <div className="form-group">
                                             <label className="form-label">Threshold *</label>

@@ -44,10 +44,10 @@ export async function claudeExtract<T>(prompt: string, systemPrompt?: string): P
     return parseJsonFromResponse(block.text) as T;
 }
 
-export async function claudeExtractFromPDF<T>(pdfBuffer: Buffer, prompt: string, systemPrompt?: string): Promise<T> {
+export async function claudeExtractFromPDF<T>(pdfBuffer: Buffer, prompt: string, systemPrompt?: string, maxTokens = EXTRACTION_MAX_TOKENS): Promise<T> {
     const stream = await client.messages.stream({
         model: EXTRACTION_MODEL,
-        max_tokens: EXTRACTION_MAX_TOKENS,
+        max_tokens: maxTokens,
         ...(systemPrompt ? { system: systemPrompt } : {}),
         messages: [{
             role: 'user',

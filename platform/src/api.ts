@@ -20,6 +20,7 @@ async function request<T = unknown>(path: string, options: ApiOptions = {}): Pro
     const token = localStorage.getItem('monsoon_clerk_token');
     const config: RequestInit = {
         method: options.method,
+        cache: 'no-store',
         headers: {
             'Content-Type': 'application/json',
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -198,7 +199,7 @@ export const api = {
         request<{ results: Array<{ trial_id: string; trial_name: string; overall_status: string; confidence: string; summary: string }>; matched: number }>
         (`/patients/${patientId}/match`, { method: 'POST', body: trialId ? { trial_id: trialId } : {} }),
     getPatientDocuments: (patientId: string) => request(`/patients/${patientId}/documents`),
-    getDocumentUrl: (patientId: string, docId: string) => `${API_BASE}/patients/${patientId}/documents/${docId}/download`,
+    getDocumentSignedUrl: (patientId: string, docId: string) => request<{ url: string }>(`/patients/${patientId}/documents/${docId}/download`).then(r => r.url),
     deletePatient: (patientId: string) => request(`/patients/${patientId}`, { method: 'DELETE' }),
     bulkDeletePatients: (ids: string[]) => request('/patients/bulk-delete', { method: 'POST', body: { ids } }),
     deletePatientDocument: (patientId: string, docId: string) => request(`/patients/${patientId}/documents/${docId}`, { method: 'DELETE' }),
@@ -213,6 +214,8 @@ export const api = {
     getSiteSettings: () => request<SiteSettingsResponse>('/settings/site'),
     updateSiteSettings: (data: { specialties: SpecialtyKey[]; enabled_options?: string[] }) =>
         request<SiteConfig>('/settings/site', { method: 'PATCH', body: data }),
+    updateTrialProfile: (payload: { trial_profile_specialties: string[]; trial_profile_signals: Partial<Record<string, string[]>> }) =>
+        request('/settings/trial-profile', { method: 'PATCH', body: payload }),
     updateSiteName: (name: string) => request<{ id: string; name: string }>('/settings/site-name', { method: 'PATCH', body: { name } }),
     getSiteTeam: () => request<{ id: string; name: string; email: string; role: string; is_active: boolean; created_at: string }[]>('/settings/users'),
     updateTeamMember: (id: string, data: { is_active?: boolean; role?: string }) =>

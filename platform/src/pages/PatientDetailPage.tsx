@@ -5,11 +5,18 @@ import { useToast } from '../contexts/ToastContext';
 import { useSiteConfig } from '../contexts/SiteConfigContext';
 import { StatusBadge, formatDate } from '../utils';
 import PDFViewerModal from '../components/PDFViewerModal';
+import { Select } from '../components/Select';
 import type {
     PatientDetail, PatientClinicalData, SignalType, Trial,
     LabValue, VitalValue, ImagingResult, ClinicalDiagnosis,
-    ProtocolSignal, SignalRuleAlignment, UploadResult,
+    ProtocolSignal, SignalRuleAlignment, UploadResult, PatientSpecialty,
 } from '../types';
+
+const SPECIALTY_META: Record<PatientSpecialty, { label: string; color: string; bg: string }> = {
+    HEPATOLOGY: { label: 'Hepatology', color: '#4a90c4', bg: 'rgba(74,144,196,0.12)' },
+    ONCOLOGY:   { label: 'Oncology',   color: '#c4744a', bg: 'rgba(196,116,74,0.12)' },
+    HEMATOLOGY: { label: 'Hematology', color: '#7a4ac4', bg: 'rgba(122,74,196,0.12)' },
+};
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -136,18 +143,21 @@ function ImagingSection({ latest, timeline }: { latest: Record<string, ImagingRe
     return (
         <div>
             {entries.map(([type, img]) => (
-                <div key={type} style={{ marginBottom: 'var(--space-3)', padding: 'var(--space-3)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                        <span style={{ fontWeight: 600, fontSize: 'var(--font-sm)' }}>{type}</span>
-                        <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)' }}>{img.date ? formatDate(img.date) : ''}</span>
-                    </div>
-                    {img.value !== undefined && (
-                        <div style={{ fontSize: 'var(--font-lg)', fontWeight: 700, margin: '4px 0' }}>
-                            {img.value}
-                            <span style={{ fontSize: 'var(--font-sm)', fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 4 }}>{img.unit}</span>
-                        </div>
-                    )}
-                    {img.findings && <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-secondary)', marginTop: 4, fontStyle: 'italic' }}>{img.findings}</div>}
+                <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{
+                        fontWeight: 500, fontSize: 'var(--font-sm)', color: 'var(--text-secondary)',
+                        flex: '1 1 0', minWidth: 0,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }} title={type}>{type}</span>
+                    <span style={{ fontWeight: 700, fontSize: 'var(--font-lg)', color: 'var(--text-primary)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {img.value !== undefined
+                            ? <>{img.value}<span style={{ fontWeight: 400, fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', marginLeft: 4 }}>{img.unit}</span></>
+                            : img.findings
+                                ? <span style={{ fontWeight: 400, fontSize: 'var(--font-sm)', color: 'var(--text-secondary)' }}>{img.findings}</span>
+                                : <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>—</span>
+                        }
+                    </span>
+                    {img.date && <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', whiteSpace: 'nowrap', flexShrink: 0 }}>{formatDate(img.date)}</span>}
                 </div>
             ))}
             {timeline.length > entries.length && (
@@ -433,13 +443,13 @@ function ExtractionReviewModal({ result, onMatch, matching, onClose }: {
 interface SigForm { signal_type_id: string; value: string; collected_at: string; source: string; }
 interface CaseForm { trial_id: string; status: string; }
 
-type Tab = 'clinical' | 'trials' | 'documents';
+type Tab = 'clinical' | 'diagnoses' | 'trials' | 'documents';
 
 export default function PatientDetailPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { addToast } = useToast();
-    const { isSectionVisible } = useSiteConfig();
+    const { isSectionVisible, profileConfig, templates } = useSiteConfig();
 
     const [patient, setPatient] = useState<PatientDetail | null>(null);
     const [clinicalData, setClinicalData] = useState<PatientClinicalData | null>(null);
@@ -455,6 +465,7 @@ export default function PatientDetailPage() {
     const [matching, setMatching] = useState(false);
     const [extractionReview, setExtractionReview] = useState<UploadResult | null>(null);
     const [pdfViewer, setPdfViewer] = useState<{ url: string; filename: string } | null>(null);
+    const [updatingSpecialty, setUpdatingSpecialty] = useState(false);
     const docFileRef = useRef<HTMLInputElement>(null);
 
     const [sigForm, setSigForm] = useState<SigForm>({
@@ -504,6 +515,15 @@ export default function PatientDetailPage() {
         } catch (err) { addToast((err as Error).message, 'error'); }
     };
 
+    const handleSpecialtyChange = async (specialty: PatientSpecialty | '') => {
+        setUpdatingSpecialty(true);
+        try {
+            await api.updatePatient(patient!.id, { specialty: specialty || null });
+            await loadPatient();
+        } catch (err) { addToast((err as Error).message, 'error'); }
+        setUpdatingSpecialty(false);
+    };
+
     const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -547,240 +567,589 @@ export default function PatientDetailPage() {
         ? Math.floor((Date.now() - new Date(patient.dob).getTime()) / (1000 * 60 * 60 * 24 * 365.25))
         : null;
 
+    // Build enabled options map from active specialty templates
+    const enabledSet = new Set(profileConfig?.enabled_options || []);
+    const hasConfig = enabledSet.size > 0;
+
+    const getEnabledOptions = (section: string) => {
+        if (!hasConfig || !profileConfig?.specialties?.length || !templates) return null;
+        const opts: { id: string; label: string }[] = [];
+        for (const key of profileConfig.specialties) {
+            for (const opt of templates[key]?.options || []) {
+                if (opt.section === section && enabledSet.has(opt.id)) {
+                    opts.push(opt);
+                }
+            }
+        }
+        return opts;
+    };
+
+    // Fuzzy-match extracted data (labs/vitals/imaging) by option label
+    const matchExtracted = (record: Record<string, { value: unknown; unit?: string; date?: string; flag?: string | null; findings?: string }>, label: string) => {
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const needle = norm(label);
+        const labelWords = label.toLowerCase().split(/[\s\/\(\)\-,]+/).map(norm).filter(Boolean);
+
+        // Explicit clinical aliases only — normalized label → normalized extracted key synonyms.
+        // Add new entries here as new extraction patterns are discovered.
+        const ALIASES: Record<string, string[]> = {
+            // Hepatology — imaging
+            'fibroscanlsm':              ['vcte', 'lsm', 'liverstiffness', 'fibroscankpa', 'transientelastography', 'fibroscanvcte', 'fibroscanliverstiffnessvcte', 'fibroscanliverstiffness'],
+            'fibroscancapscore':         ['cap', 'capscore', 'controlledattenuation', 'controlledattenuationparameter', 'fibroscancap', 'fibroscancapcontrolledattenuationparameter', 'fibroscancapcontrolledattenuation'],
+            'liverultrasound':           ['liverus', 'hepaticultrasound', 'rueultrasound', 'abdominultrasound'],
+            'ctabdomen':                 ['ctabd', 'ctabdomen', 'ctabdpelvis', 'computedtomographyabdomen'],
+            'mriliver':                  ['mriabdomen', 'mrcp', 'hepaticmri', 'livermri'],
+            // Hepatology — labs
+            'alt':                       ['sgpt', 'alanineaminotransferase'],
+            'ast':                       ['sgot', 'aspartateaminotransferase'],
+            'ggt':                       ['gammaglutamyltransferase', 'gammaglutamyltranspeptidase'],
+            'alkalinephosphatase':       ['alkphos', 'alp', 'alkp'],
+            'totalbilirubin':            ['tbili', 'totalbili', 'bilirubin'],
+            'directbilirubin':           ['dbili', 'directbili', 'conjugatedbilirubin'],
+            'albumin':                   ['serumalbumin'],
+            'plateletcount':             ['platelets', 'plt'],
+            'inr':                       ['prothrombintime', 'pt'],
+            'hemoglobin':                ['hgb', 'hb'],
+            'whitebloodcell':            ['wbc', 'whitebloodcellcount', 'leukocytes'],
+            'creatinine':                ['scr', 'serumcreatinine'],
+            'sodiumna':                  ['sodium', 'serumna', 'na'],
+        };
+        const aliases = ALIASES[needle] ?? [];
+
+        for (const [name, val] of Object.entries(record)) {
+            const hay = norm(name);
+            const nameWords = name.toLowerCase().split(/[\s\/\(\)\-,]+/).map(norm).filter(Boolean);
+
+            if (
+                hay === needle ||                              // exact normalized match
+                nameWords.some(w => w === needle) ||          // one extracted word equals full normalized label
+                labelWords.some(w => w === hay && w.length >= 4) ||  // full extracted name equals a label word (min 4 chars)
+                aliases.includes(hay) ||                       // direct alias
+                nameWords.some(w => aliases.includes(w))       // alias found within extracted name words
+            ) {
+                return { name, val };
+            }
+        }
+        return null;
+    };
+
     const TAB_LABELS: Record<Tab, string> = {
-        clinical: 'Clinical',
-        trials: `Trials${protocolSignals.length > 0 ? ` (${protocolSignals.length})` : ''}`,
+        clinical:  'Clinical',
+        diagnoses: 'Diagnoses & History',
+        trials:    `Trials${protocolSignals.length > 0 ? ` (${protocolSignals.length})` : ''}`,
         documents: `Documents${patient.documents?.length ? ` (${(patient.documents as unknown[]).length})` : ''}`,
     };
 
+    const specialtyColor = patient.specialty ? SPECIALTY_META[patient.specialty].color : 'var(--accent)';
+    const initials = `${patient.first_name[0] ?? ''}${patient.last_name[0] ?? ''}`.toUpperCase();
+
     return (
         <div>
-            {/* Header */}
-            <div className="detail-header">
-                <div className="detail-header-info">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-1)' }}>
-                        <Link to="/patients" style={{ color: 'var(--text-tertiary)', textDecoration: 'none', fontSize: 'var(--font-sm)' }}>← Patients</Link>
+            <input ref={docFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleDocUpload} style={{ display: 'none' }} />
+
+            {/* ── Two-panel layout ── */}
+            <div style={{ display: 'flex', gap: 'var(--space-5)', alignItems: 'flex-start' }}>
+
+                {/* ── Left Sidebar ── */}
+                <aside style={{ width: 232, flexShrink: 0, position: 'sticky', top: 24, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+
+                    {/* Back */}
+                    <Link to="/patients" style={{ color: 'var(--text-tertiary)', textDecoration: 'none', fontSize: 'var(--font-sm)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        ← Patients
+                    </Link>
+
+                    {/* Identity card */}
+                    <div className="card" style={{ padding: 'var(--space-5)', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+                        {/* Avatar */}
+                        <div style={{
+                            width: 56, height: 56, borderRadius: '50%',
+                            background: patient.specialty ? SPECIALTY_META[patient.specialty].bg : 'var(--accent-muted)',
+                            border: `2px solid ${specialtyColor}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 20, fontWeight: 700, color: specialtyColor,
+                            marginBottom: 12,
+                        }}>
+                            {initials}
+                        </div>
+
+                        {/* Name */}
+                        <div style={{ fontWeight: 700, fontSize: 'var(--font-lg)', lineHeight: 1.2, marginBottom: 8 }}>
+                            {patient.first_name} {patient.last_name}
+                        </div>
+
+                        {/* Specialty selector */}
+                        <div style={{ marginBottom: 14 }}>
+                            <Select
+                                value={patient.specialty || ''}
+                                onChange={val => handleSpecialtyChange(val as PatientSpecialty | '')}
+                                disabled={updatingSpecialty}
+                                options={[
+                                    { value: '', label: 'Set specialty…' },
+                                    ...(Object.keys(SPECIALTY_META) as PatientSpecialty[]).map(k => ({ value: k, label: SPECIALTY_META[k].label })),
+                                ]}
+                                style={patient.specialty ? {
+                                    width: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 10px',
+                                    borderRadius: 'var(--radius-full)',
+                                    background: SPECIALTY_META[patient.specialty as PatientSpecialty].bg,
+                                    color: SPECIALTY_META[patient.specialty as PatientSpecialty].color,
+                                    border: 'none', letterSpacing: '0.04em',
+                                } : {
+                                    width: 'auto', fontSize: 11, padding: '3px 10px',
+                                    borderRadius: 'var(--radius-full)',
+                                    background: 'transparent', border: '1px dashed var(--border-default)',
+                                    color: 'var(--text-tertiary)',
+                                }}
+                            />
+                        </div>
+
+                        {/* Meta rows */}
+                        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 5, fontSize: 'var(--font-sm)', textAlign: 'left' }}>
+                            {age !== null && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span style={{ color: 'var(--text-tertiary)' }}>Age</span>
+                                    <span style={{ fontWeight: 500 }}>{age} yrs</span>
+                                </div>
+                            )}
+                            {patient.dob && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span style={{ color: 'var(--text-tertiary)' }}>DOB</span>
+                                    <span style={{ fontWeight: 500 }}>{formatDate(patient.dob)}</span>
+                                </div>
+                            )}
+                            {patient.internal_identifier && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span style={{ color: 'var(--text-tertiary)' }}>MRN</span>
+                                    <span style={{ fontWeight: 500 }}>{patient.internal_identifier}</span>
+                                </div>
+                            )}
+                            {patient.referral_source_name && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span style={{ color: 'var(--text-tertiary)' }}>Referred by</span>
+                                    <span style={{ fontWeight: 500, textAlign: 'right', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{patient.referral_source_name}</span>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                    <h1 style={{ marginBottom: 'var(--space-1)' }}>{patient.first_name} {patient.last_name}</h1>
-                    <div className="detail-header-meta">
-                        {patient.dob && <span>DOB: {formatDate(patient.dob)}{age !== null ? ` (${age}y)` : ''}</span>}
-                        {patient.internal_identifier && <span>ID: {patient.internal_identifier}</span>}
-                        {clinicalData?.diagnoses[0]?.name && <span style={{ color: 'var(--text-secondary)' }}>{clinicalData.diagnoses.filter(d => d.status !== 'resolved').map(d => d.name).join(' · ')}</span>}
-                        {patient.referral_source_name && <span>Ref: {patient.referral_source_name}</span>}
+
+                    {/* Key Signals */}
+                    {patient.signals && patient.signals.length > 0 && (
+                        <div className="card" style={{ padding: 'var(--space-4)' }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                                Key Values
+                            </div>
+                            {patient.signals.slice(0, 5).map(sig => (
+                                <div key={sig.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--border-subtle)', fontSize: 'var(--font-sm)' }}>
+                                    <span style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110 }}>{sig.signal_label}</span>
+                                    <span style={{ fontWeight: 600, flexShrink: 0, marginLeft: 4 }}>
+                                        {sig.value_number != null ? sig.value_number : (sig.value_enum || sig.value_text || '—')}
+                                        {sig.unit && <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', fontSize: 10, marginLeft: 2 }}>{sig.unit}</span>}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Quick stats */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        {[
+                            { label: 'Cases', value: patient.screening_cases?.length ?? 0 },
+                            { label: 'Documents', value: (patient.documents as unknown[] | undefined)?.length ?? 0 },
+                        ].map(({ label, value }) => (
+                            <div key={label} className="card" style={{ padding: 'var(--space-3)', textAlign: 'center' }}>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent)' }}>{value}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{label}</div>
+                            </div>
+                        ))}
                     </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                    <button className="btn btn-secondary" onClick={() => docFileRef.current?.click()} disabled={uploading}>
-                        {uploading ? 'Uploading…' : 'Upload Document'}
-                    </button>
-                    <input ref={docFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleDocUpload} style={{ display: 'none' }} />
-                    <button className="btn btn-secondary" onClick={() => setShowSignalModal(true)}>+ Signal</button>
-                    <button className="btn btn-primary" onClick={() => setShowCaseModal(true)}>+ Screening Case</button>
-                </div>
-            </div>
 
-            {/* Tab Bar */}
-            <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 'var(--space-5)' }}>
-                {(['clinical', 'trials', 'documents'] as Tab[]).map(tab => (
-                    <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        style={{
-                            padding: '10px 18px',
-                            border: 'none',
-                            background: 'none',
-                            cursor: 'pointer',
-                            fontSize: 'var(--font-sm)',
-                            fontWeight: activeTab === tab ? 600 : 400,
-                            color: activeTab === tab ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                            borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
-                            marginBottom: -1,
-                        }}
-                    >
-                        {TAB_LABELS[tab]}
-                    </button>
-                ))}
-            </div>
+                    {/* Actions */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingRight: '2.5rem' }}>
+                        <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}
+                            onClick={() => docFileRef.current?.click()} disabled={uploading}>
+                            {uploading ? 'Uploading…' : '↑ Upload Document'}
+                        </button>
+                        <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}
+                            onClick={() => setShowSignalModal(true)}>
+                            + Record Signal
+                        </button>
+                        <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}
+                            onClick={() => setShowCaseModal(true)}>
+                            + Screening Case
+                        </button>
+                    </div>
+                </aside>
 
-            {/* ── Clinical Tab ── */}
-            {activeTab === 'clinical' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', maxWidth: "100%" }}>
-                    {isSectionVisible('diagnoses') && (
-                        <div className="detail-section">
-                            <SectionHeader title="Conditions & Diagnoses" count={clinicalData?.diagnoses.length} />
-                            {clinicalData
-                                ? <DiagnosesSection diagnoses={clinicalData.diagnoses} />
-                                : <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>Upload a patient document to extract clinical data.</div>
-                            }
-                        </div>
-                    )}
+                {/* ── Right Panel ── */}
+                <main style={{ flex: 1, minWidth: 0 }}>
 
-                    {isSectionVisible('medications') && clinicalData && clinicalData.medications.length > 0 && (
-                        <div className="detail-section">
-                            <SectionHeader title="Medications" count={clinicalData.medications.length} />
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                {clinicalData.medications.map((m, i) => (
-                                    <div key={i} style={{ fontSize: 'var(--font-sm)', padding: '4px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}>
-                                        <span style={{ fontWeight: 500 }}>{m.name}</span>
-                                        <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)' }}>{[m.dose, m.frequency].filter(Boolean).join(' · ')}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
+                    {/* Tab Bar */}
+                    <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)', marginBottom: 'var(--space-5)' }}>
+                        {(Object.keys(TAB_LABELS) as Tab[]).map(tab => (
+                            <button key={tab} onClick={() => setActiveTab(tab)} style={{
+                                padding: '10px 18px', border: 'none', background: 'none', cursor: 'pointer',
+                                fontSize: 'var(--font-sm)',
+                                fontWeight: activeTab === tab ? 600 : 400,
+                                color: activeTab === tab ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                                borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
+                                marginBottom: -1, whiteSpace: 'nowrap',
+                            }}>
+                                {TAB_LABELS[tab]}
+                            </button>
+                        ))}
+                    </div>
 
-                    {isSectionVisible('medications') && clinicalData && clinicalData.allergies.length > 0 && (
-                        <div className="detail-section">
-                            <SectionHeader title="Allergies" />
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-                                {clinicalData.allergies.map((a, i) => (
-                                    <span key={i} style={{ fontSize: 'var(--font-xs)', padding: '3px 10px', borderRadius: 12, background: '#f8d7da', color: '#721c24', fontWeight: 500 }}>{a}</span>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {isSectionVisible('labs') && (
-                        <div className="detail-section">
-                            <SectionHeader title="Labs" count={clinicalData ? Object.keys(clinicalData.labs_latest).length : undefined} />
-                            {clinicalData
-                                ? <LabsSection latest={clinicalData.labs_latest} timeline={clinicalData.labs_timeline} />
-                                : <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No lab data yet.</div>
-                            }
-                        </div>
-                    )}
-
-                    {isSectionVisible('vitals') && clinicalData && Object.keys(clinicalData.vitals_latest).length > 0 && (
-                        <div className="detail-section">
-                            <SectionHeader title="Vitals" />
-                            <VitalsSection latest={clinicalData.vitals_latest} />
-                        </div>
-                    )}
-
-                    {isSectionVisible('imaging') && clinicalData && Object.keys(clinicalData.imaging_latest).length > 0 && (
-                        <div className="detail-section">
-                            <SectionHeader title="Imaging" count={Object.keys(clinicalData.imaging_latest).length} />
-                            <ImagingSection latest={clinicalData.imaging_latest} timeline={clinicalData.imaging_timeline} />
-                        </div>
-                    )}
-
-                    {isSectionVisible('lifestyle') && clinicalData && (clinicalData.smoking_status || clinicalData.alcohol_use) && (
-                        <div className="detail-section">
-                            <SectionHeader title="Lifestyle" />
-                            <div style={{ display: 'flex', gap: 'var(--space-4)', fontSize: 'var(--font-sm)' }}>
-                                {clinicalData.smoking_status && <span><strong>Smoking:</strong> {clinicalData.smoking_status}</span>}
-                                {clinicalData.alcohol_use && <span><strong>Alcohol:</strong> {clinicalData.alcohol_use}</span>}
-                            </div>
-                        </div>
-                    )}
-
-                    {isSectionVisible('family_history') && clinicalData && clinicalData.family_history.length > 0 && (
-                        <div className="detail-section">
-                            <SectionHeader title="Family History" />
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                {clinicalData.family_history.map((f, i) => (
-                                    <div key={i} style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)' }}>{f}</div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {isSectionVisible('surgical_history') && clinicalData && clinicalData.surgical_history.length > 0 && (
-                        <div className="detail-section">
-                            <SectionHeader title="Surgical History" />
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                {clinicalData.surgical_history.map((s, i) => (
-                                    <div key={i} style={{ fontSize: 'var(--font-sm)', display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: '1px solid var(--border)' }}>
-                                        <span style={{ fontWeight: 500 }}>{s.procedure}</span>
-                                        {s.date && <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)' }}>{formatDate(s.date)}</span>}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {isSectionVisible('signals') && patient.signals && patient.signals.length > 0 && (
-                        <div className="detail-section">
-                            <SectionHeader title="Recorded Signals" count={patient.signals.length} />
-                            <div className="signal-timeline">
-                                {patient.signals.slice(0, 10).map(sig => (
-                                    <div key={sig.id} className="signal-item">
-                                        <div className="signal-dot">◉</div>
-                                        <div className="signal-info">
-                                            <div className="signal-label">{sig.signal_label}</div>
-                                            <div className="signal-value">
-                                                {sig.value_number != null ? sig.value_number : (sig.value_enum || sig.value_text)}
-                                                {sig.unit && <span style={{ fontSize: 'var(--font-sm)', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 4 }}>{sig.unit}</span>}
+                    {/* ── Clinical Tab: Labs + Vitals (2-col) + Imaging + Signals ── */}
+                    {activeTab === 'clinical' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', alignItems: 'start' }}>
+                                {/* Labs */}
+                                {isSectionVisible('labs') && (() => {
+                                    const opts = getEnabledOptions('labs');
+                                    if (opts && opts.length > 0) {
+                                        const matchedNames = new Set<string>();
+                                        return (
+                                            <div className="detail-section">
+                                                <SectionHeader title="Labs" />
+                                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-sm)' }}>
+                                                    <tbody>
+                                                        {opts.map(opt => {
+                                                            const match = clinicalData ? matchExtracted(clinicalData.labs_latest as Record<string, { value: unknown; unit?: string; date?: string; flag?: string | null }>, opt.label) : null;
+                                                            if (match) matchedNames.add(match.name);
+                                                            const lab = match?.val as LabValue | undefined;
+                                                            return (
+                                                                <tr key={opt.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                                                    <td style={{ padding: '7px 0', color: 'var(--text-primary)', fontWeight: 500, width: '50%' }}>{opt.label}</td>
+                                                                    <td style={{ padding: '7px 4px', fontWeight: 600, color: lab?.flag === 'critical' ? '#721c24' : lab?.flag ? '#856404' : 'var(--text-primary)' }}>
+                                                                        {lab ? (
+                                                                            <>
+                                                                                {String(lab.value)}
+                                                                                <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 4, fontSize: 11 }}>{lab.unit}</span>
+                                                                                {lab.flag && <FlagBadge flag={lab.flag} />}
+                                                                            </>
+                                                                        ) : <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>—</span>}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                                {clinicalData && Object.keys(clinicalData.labs_latest).some(k => !matchedNames.has(k)) && (
+                                                    <details style={{ marginTop: 'var(--space-3)' }}>
+                                                        <summary style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', cursor: 'pointer', listStyle: 'none', userSelect: 'none' }}>▶ Additional extracted labs</summary>
+                                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-sm)', marginTop: 'var(--space-2)' }}>
+                                                            <tbody>
+                                                                {Object.entries(clinicalData.labs_latest).filter(([k]) => !matchedNames.has(k)).map(([name, lab]) => (
+                                                                    <tr key={name} style={{ borderBottom: '1px solid var(--border)' }}>
+                                                                        <td style={{ padding: '5px 0', color: 'var(--text-secondary)', width: '50%' }}>{name}</td>
+                                                                        <td style={{ padding: '5px 4px', fontWeight: 600 }}>{String(lab.value)} <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', fontSize: 11 }}>{lab.unit}</span></td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </details>
+                                                )}
                                             </div>
-                                            <div className="signal-meta">{formatDate(sig.collected_at)} {sig.source && `· ${sig.source}`}</div>
+                                        );
+                                    }
+                                    return (
+                                        <div className="detail-section">
+                                            <SectionHeader title="Labs" count={clinicalData ? Object.keys(clinicalData.labs_latest).length : undefined} />
+                                            {clinicalData
+                                                ? <LabsSection latest={clinicalData.labs_latest} timeline={clinicalData.labs_timeline} />
+                                                : <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No lab data yet.</div>
+                                            }
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })()}
+
+                                {/* Vitals */}
+                                {isSectionVisible('vitals') && (() => {
+                                    const opts = getEnabledOptions('vitals');
+                                    if (opts && opts.length > 0) {
+                                        const matchedNames = new Set<string>();
+                                        return (
+                                            <div className="detail-section">
+                                                <SectionHeader title="Vitals" />
+                                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-sm)' }}>
+                                                    <tbody>
+                                                        {opts.map(opt => {
+                                                            const match = clinicalData ? matchExtracted(clinicalData.vitals_latest as Record<string, { value: unknown; unit?: string; date?: string }>, opt.label) : null;
+                                                            if (match) matchedNames.add(match.name);
+                                                            const v = match?.val as VitalValue | undefined;
+                                                            return (
+                                                                <tr key={opt.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                                                    <td style={{ padding: '7px 0', fontWeight: 500, width: '50%' }}>{opt.label}</td>
+                                                                    <td style={{ padding: '7px 4px', fontWeight: 600 }}>
+                                                                        {v ? (
+                                                                            <>{String(v.value)} <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', fontSize: 11 }}>{v.unit}</span></>
+                                                                        ) : <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>—</span>}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                                {clinicalData && Object.keys(clinicalData.vitals_latest).some(k => !matchedNames.has(k)) && (
+                                                    <details style={{ marginTop: 'var(--space-3)' }}>
+                                                        <summary style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', cursor: 'pointer', listStyle: 'none', userSelect: 'none' }}>▶ Additional vitals</summary>
+                                                        <div style={{ marginTop: 'var(--space-2)' }}>
+                                                            {Object.entries(clinicalData.vitals_latest).filter(([k]) => !matchedNames.has(k)).map(([name, v]) => (
+                                                                <div key={name} style={{ fontSize: 'var(--font-sm)', display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+                                                                    <span style={{ color: 'var(--text-secondary)' }}>{name}</span>
+                                                                    <span style={{ fontWeight: 600 }}>{String(v.value)} <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', fontSize: 11 }}>{v.unit}</span></span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </details>
+                                                )}
+                                            </div>
+                                        );
+                                    }
+                                    return (
+                                        <div className="detail-section">
+                                            <SectionHeader title="Vitals" />
+                                            {clinicalData && Object.keys(clinicalData.vitals_latest).length > 0
+                                                ? <VitalsSection latest={clinicalData.vitals_latest} />
+                                                : <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No vitals recorded.</div>
+                                            }
+                                        </div>
+                                    );
+                                })()}
                             </div>
-                        </div>
-                    )}
 
-                    {patient.notes && (
-                        <div className="detail-section">
-                            <SectionHeader title="Notes" />
-                            <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', margin: 0 }}>{patient.notes}</p>
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* ── Trials Tab ── */}
-            {activeTab === 'trials' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', maxWidth: "100%" }}>
-                    {/* Signal-Rule Alignment */}
-                    <div className="detail-section">
-                        <div className="detail-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span>Signal Eligibility Preview</span>
-                            <span style={{ fontSize: 'var(--font-xs)', fontWeight: 400, color: 'var(--text-tertiary)' }}>No AI · instant</span>
-                        </div>
-                        <SignalAlignmentSection alignment={signalAlignment} />
-                    </div>
-
-                    {/* Screening Cases */}
-                    <div className="detail-section">
-                        <SectionHeader title="Screening Cases" count={patient.screening_cases?.length} />
-                        {(!patient.screening_cases || patient.screening_cases.length === 0) ? (
-                            <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-2) 0' }}>No screening cases yet.</div>
-                        ) : (
-                            patient.screening_cases.map(sc => (
-                                <div key={sc.id} className="alert-card" onClick={() => navigate(`/screening/${sc.id}`)} style={{ cursor: 'pointer' }}>
-                                    <div className="alert-content">
-                                        <div className="alert-title">{sc.trial_name}</div>
-                                        <div className="alert-meta">
-                                            {sc.protocol_number && `${sc.protocol_number} · `}
-                                            <StatusBadge status={sc.status} />
-                                            {sc.assigned_user_name && ` · ${sc.assigned_user_name}`}
+                            {/* Imaging — full width */}
+                            {isSectionVisible('imaging') && (() => {
+                                const opts = getEnabledOptions('imaging');
+                                if (opts && opts.length > 0) {
+                                    const matchedNames = new Set<string>();
+                                    return (
+                                        <div className="detail-section">
+                                            <SectionHeader title="Imaging" />
+                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                {opts.map(opt => {
+                                                    const match = clinicalData ? matchExtracted(clinicalData.imaging_latest as Record<string, { value: unknown; unit?: string; date?: string; findings?: string }>, opt.label) : null;
+                                                    if (match) matchedNames.add(match.name);
+                                                    const img = match?.val as ImagingResult | undefined;
+                                                    return (
+                                                        <div key={opt.id} style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                                                            <span style={{ fontWeight: 500, fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', flex: '0 0 auto', minWidth: 160 }}>{opt.label}</span>
+                                                            <span style={{ fontWeight: 700, fontSize: 'var(--font-lg)', color: 'var(--text-primary)' }}>
+                                                                {img?.value !== undefined ? (
+                                                                    <>{img.value}<span style={{ fontWeight: 400, color: 'var(--text-tertiary)', fontSize: 'var(--font-sm)', marginLeft: 4 }}>{img.unit}</span></>
+                                                                ) : img ? (
+                                                                    <span style={{ color: 'var(--text-secondary)', fontWeight: 400, fontSize: 'var(--font-sm)' }}>{img.findings || 'Result available'}</span>
+                                                                ) : <span style={{ color: 'var(--text-tertiary)', fontWeight: 400, fontSize: 'var(--font-sm)' }}>—</span>}
+                                                            </span>
+                                                            {img?.date && <span style={{ marginLeft: 'auto', color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)' }}>{formatDate(img.date)}</span>}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            {clinicalData && Object.keys(clinicalData.imaging_latest).some(k => !matchedNames.has(k)) && (
+                                                <details style={{ marginTop: 'var(--space-3)' }}>
+                                                    <summary style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', cursor: 'pointer', listStyle: 'none', userSelect: 'none' }}>▶ Additional imaging</summary>
+                                                    <ImagingSection latest={Object.fromEntries(Object.entries(clinicalData.imaging_latest).filter(([k]) => !matchedNames.has(k)))} timeline={[]} />
+                                                </details>
+                                            )}
                                         </div>
-                                        {sc.revisit_date && (
-                                            <div className="alert-meta" style={{ marginTop: 2 }}>Revisit: {formatDate(sc.revisit_date)}</div>
-                                        )}
+                                    );
+                                }
+                                return (
+                                    <div className="detail-section">
+                                        <SectionHeader title="Imaging" count={clinicalData ? Object.keys(clinicalData.imaging_latest).length : undefined} />
+                                        {clinicalData && Object.keys(clinicalData.imaging_latest).length > 0
+                                            ? <ImagingSection latest={clinicalData.imaging_latest} timeline={clinicalData.imaging_timeline} />
+                                            : <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No imaging results recorded.</div>
+                                        }
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Recorded Signals */}
+                            {isSectionVisible('signals') && (
+                                <div className="detail-section">
+                                    <SectionHeader title="Recorded Signals" count={patient.signals?.length} />
+                                    {patient.signals && patient.signals.length > 0 ? (
+                                        <div className="signal-timeline">
+                                            {patient.signals.slice(0, 10).map(sig => (
+                                                <div key={sig.id} className="signal-item">
+                                                    <div className="signal-dot">◉</div>
+                                                    <div className="signal-info">
+                                                        <div className="signal-label">{sig.signal_label}</div>
+                                                        <div className="signal-value">
+                                                            {sig.value_number != null ? sig.value_number : (sig.value_enum || sig.value_text)}
+                                                            {sig.unit && <span style={{ fontSize: 'var(--font-sm)', fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 4 }}>{sig.unit}</span>}
+                                                        </div>
+                                                        <div className="signal-meta">{formatDate(sig.collected_at)} {sig.source && `· ${sig.source}`}</div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No signals recorded yet.</div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ── Diagnoses & History Tab ── */}
+                    {activeTab === 'diagnoses' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                            <div className="detail-section">
+                                <SectionHeader title="Conditions & Diagnoses" count={clinicalData?.diagnoses.length} />
+                                {clinicalData
+                                    ? <DiagnosesSection diagnoses={clinicalData.diagnoses} />
+                                    : <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>Upload a patient document to extract diagnoses.</div>
+                                }
+                            </div>
+
+                            {isSectionVisible('medications') && (
+                                <div className="detail-section">
+                                    <SectionHeader title="Medications" count={clinicalData?.medications.length} />
+                                    {clinicalData && clinicalData.medications.length > 0 ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            {clinicalData.medications.map((m, i) => (
+                                                <div key={i} style={{ fontSize: 'var(--font-sm)', padding: '6px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}>
+                                                    <span style={{ fontWeight: 500 }}>{m.name}</span>
+                                                    <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)' }}>{[m.dose, m.frequency].filter(Boolean).join(' · ')}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No medications recorded.</div>}
+                                </div>
+                            )}
+
+                            {isSectionVisible('medications') && clinicalData && clinicalData.allergies.length > 0 && (
+                                <div className="detail-section">
+                                    <SectionHeader title="Allergies" />
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                                        {clinicalData.allergies.map((a, i) => (
+                                            <span key={i} style={{ fontSize: 'var(--font-xs)', padding: '3px 10px', borderRadius: 12, background: '#f8d7da', color: '#721c24', fontWeight: 500 }}>{a}</span>
+                                        ))}
                                     </div>
                                 </div>
-                            ))
-                        )}
-                    </div>
+                            )}
 
-                    {/* AI Match History */}
-                    <div className="detail-section">
-                        <div className="detail-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span>AI Match History</span>
-                            <button
-                                className="btn btn-sm btn-secondary"
-                                onClick={handleMatchNow}
-                                disabled={matching}
-                            >
-                                {matching ? 'Matching…' : 'Run Matching'}
-                            </button>
+                            {isSectionVisible('lifestyle') && (
+                                <div className="detail-section">
+                                    <SectionHeader title="Lifestyle" />
+                                    {clinicalData && (clinicalData.smoking_status || clinicalData.alcohol_use) ? (
+                                        <div style={{ display: 'flex', gap: 'var(--space-6)', fontSize: 'var(--font-sm)' }}>
+                                            {clinicalData.smoking_status && <span><strong>Smoking:</strong> {clinicalData.smoking_status}</span>}
+                                            {clinicalData.alcohol_use && <span><strong>Alcohol:</strong> {clinicalData.alcohol_use}</span>}
+                                        </div>
+                                    ) : <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No lifestyle data recorded.</div>}
+                                </div>
+                            )}
+
+                            {isSectionVisible('surgical_history') && (
+                                <div className="detail-section">
+                                    <SectionHeader title="Surgical History" />
+                                    {clinicalData && clinicalData.surgical_history.length > 0 ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            {clinicalData.surgical_history.map((s, i) => (
+                                                <div key={i} style={{ fontSize: 'var(--font-sm)', display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
+                                                    <span style={{ fontWeight: 500 }}>{s.procedure}</span>
+                                                    {s.date && <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)' }}>{formatDate(s.date)}</span>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No surgical history recorded.</div>}
+                                </div>
+                            )}
+
+                            {isSectionVisible('family_history') && (
+                                <div className="detail-section">
+                                    <SectionHeader title="Family History" />
+                                    {clinicalData && clinicalData.family_history.length > 0 ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                            {clinicalData.family_history.map((f, i) => (
+                                                <div key={i} style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)' }}>{f}</div>
+                                            ))}
+                                        </div>
+                                    ) : <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>No family history recorded.</div>}
+                                </div>
+                            )}
+
+                            {patient.notes && (
+                                <div className="detail-section">
+                                    <SectionHeader title="Clinical Notes" />
+                                    <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', margin: 0 }}>{patient.notes}</p>
+                                </div>
+                            )}
                         </div>
-                        <MatchHistorySection signals={protocolSignals} />
+                    )}
+
+            {/* ── Trials Tab ── */}
+            {activeTab === 'trials' && (() => {
+                const enrolledCases = patient.screening_cases?.filter(sc => sc.status === 'ENROLLED') ?? [];
+                const otherCases = patient.screening_cases?.filter(sc => sc.status !== 'ENROLLED') ?? [];
+                return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', maxWidth: '100%' }}>
+
+                        {/* Current Trials */}
+                        <div className="detail-section">
+                            <SectionHeader title="Current Trials" count={enrolledCases.length} />
+                            {enrolledCases.length === 0 ? (
+                                <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-2) 0' }}>No active trial enrollments.</div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                    {enrolledCases.map(sc => (
+                                        <div key={sc.id} onClick={() => navigate(`/screening/${sc.id}`)} style={{
+                                            cursor: 'pointer', padding: 'var(--space-3) var(--space-4)',
+                                            borderRadius: 'var(--radius-md)', border: '1px solid var(--accent)',
+                                            background: 'var(--accent-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                        }}>
+                                            <div>
+                                                <div style={{ fontWeight: 600, fontSize: 'var(--font-base)', color: 'var(--text-primary)' }}>{sc.trial_name}</div>
+                                                <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', marginTop: 2 }}>
+                                                    {[sc.protocol_number, sc.assigned_user_name ? `Assigned to ${sc.assigned_user_name}` : null].filter(Boolean).join(' · ')}
+                                                </div>
+                                            </div>
+                                            <StatusBadge status={sc.status} />
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Signal-Rule Alignment */}
+                        <div className="detail-section">
+                            <div className="detail-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span>Signal Eligibility Preview</span>
+                                <span style={{ fontSize: 'var(--font-xs)', fontWeight: 400, color: 'var(--text-tertiary)' }}>No AI · instant</span>
+                            </div>
+                            <SignalAlignmentSection alignment={signalAlignment} />
+                        </div>
+
+                        {/* Screening Cases */}
+                        <div className="detail-section">
+                            <SectionHeader title="Screening Cases" count={otherCases.length} />
+                            {otherCases.length === 0 ? (
+                                <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-2) 0' }}>No screening cases yet.</div>
+                            ) : (
+                                otherCases.map(sc => (
+                                    <div key={sc.id} className="alert-card" onClick={() => navigate(`/screening/${sc.id}`)} style={{ cursor: 'pointer' }}>
+                                        <div className="alert-content">
+                                            <div className="alert-title">{sc.trial_name}</div>
+                                            <div className="alert-meta">
+                                                {sc.protocol_number && `${sc.protocol_number} · `}
+                                                <StatusBadge status={sc.status} />
+                                                {sc.assigned_user_name && ` · ${sc.assigned_user_name}`}
+                                            </div>
+                                            {sc.revisit_date && (
+                                                <div className="alert-meta" style={{ marginTop: 2 }}>Revisit: {formatDate(sc.revisit_date)}</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* ── Documents Tab ── */}
             {activeTab === 'documents' && (
@@ -808,7 +1177,10 @@ export default function PatientDetailPage() {
                                         <button
                                             className="btn btn-sm btn-ghost"
                                             style={{ color: 'var(--accent)', fontSize: 'var(--font-xs)', padding: '2px 8px', flexShrink: 0 }}
-                                            onClick={() => setPdfViewer({ url: api.getDocumentUrl(patient.id, doc.id), filename: doc.filename })}
+                                            onClick={async () => {
+                                                const signedUrl = await api.getDocumentSignedUrl(patient.id, doc.id);
+                                                setPdfViewer({ url: signedUrl, filename: doc.filename });
+                                            }}
                                         >
                                             View
                                         </button>
@@ -819,6 +1191,9 @@ export default function PatientDetailPage() {
                     </div>
                 </div>
             )}
+
+                </main>
+            </div>
 
             {/* ── Add Signal Modal ── */}
             {showSignalModal && (
@@ -831,10 +1206,14 @@ export default function PatientDetailPage() {
                         <form onSubmit={handleAddSignal}>
                             <div className="form-group">
                                 <label className="form-label">Signal Type *</label>
-                                <select className="form-select" value={sigForm.signal_type_id} onChange={e => setSigForm({ ...sigForm, signal_type_id: e.target.value })} required>
-                                    <option value="">Select signal type…</option>
-                                    {signalTypes.map(st => <option key={st.id} value={st.id}>{st.label} {st.unit ? `(${st.unit})` : ''}</option>)}
-                                </select>
+                                <Select
+                                    value={sigForm.signal_type_id}
+                                    onChange={val => setSigForm({ ...sigForm, signal_type_id: val })}
+                                    options={[
+                                        { value: '', label: 'Select signal type…' },
+                                        ...signalTypes.map(st => ({ value: st.id, label: `${st.label}${st.unit ? ` (${st.unit})` : ''}` })),
+                                    ]}
+                                />
                             </div>
                             <div className="form-row">
                                 <div className="form-group">
@@ -870,18 +1249,26 @@ export default function PatientDetailPage() {
                         <form onSubmit={handleCreateCase}>
                             <div className="form-group">
                                 <label className="form-label">Trial *</label>
-                                <select className="form-select" value={caseForm.trial_id} onChange={e => setCaseForm({ ...caseForm, trial_id: e.target.value })} required>
-                                    <option value="">Select trial…</option>
-                                    {trials.map(t => <option key={t.id} value={t.id}>{t.name} ({t.protocol_number || t.specialty})</option>)}
-                                </select>
+                                <Select
+                                    value={caseForm.trial_id}
+                                    onChange={val => setCaseForm({ ...caseForm, trial_id: val })}
+                                    options={[
+                                        { value: '', label: 'Select trial…' },
+                                        ...trials.map(t => ({ value: t.id, label: `${t.name} (${t.protocol_number || t.specialty})` })),
+                                    ]}
+                                />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Initial Status</label>
-                                <select className="form-select" value={caseForm.status} onChange={e => setCaseForm({ ...caseForm, status: e.target.value })}>
-                                    <option value="NEW">New</option>
-                                    <option value="IN_REVIEW">In Review</option>
-                                    <option value="PENDING_INFO">Pending Info</option>
-                                </select>
+                                <Select
+                                    value={caseForm.status}
+                                    onChange={val => setCaseForm({ ...caseForm, status: val })}
+                                    options={[
+                                        { value: 'NEW', label: 'New' },
+                                        { value: 'IN_REVIEW', label: 'In Review' },
+                                        { value: 'PENDING_INFO', label: 'Pending Info' },
+                                    ]}
+                                />
                             </div>
                             <div className="modal-actions">
                                 <button type="button" className="btn btn-secondary" onClick={() => setShowCaseModal(false)}>Cancel</button>

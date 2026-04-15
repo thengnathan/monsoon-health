@@ -1,45 +1,14 @@
 import { useState, useEffect } from 'react';
 
 interface PDFViewerModalProps {
-    url: string;         // signed URL or redirect URL
+    url: string;         // pre-resolved Supabase signed URL
     filename: string;
     onClose: () => void;
 }
 
 export default function PDFViewerModal({ url, filename, onClose }: PDFViewerModalProps) {
     const [loading, setLoading] = useState(true);
-    const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
     const [error, setError] = useState(false);
-
-    // The backend returns a 302 redirect to the signed Supabase URL.
-    // iframes follow redirects automatically, but we fetch the final URL
-    // so we can also offer a direct download link.
-    useEffect(() => {
-        let cancelled = false;
-        setLoading(true);
-        setError(false);
-
-        fetch(url, { redirect: 'follow' })
-            .then(res => {
-                if (!res.ok) throw new Error('Failed to load');
-                return res.url; // final URL after redirect
-            })
-            .then(finalUrl => {
-                if (!cancelled) {
-                    setResolvedUrl(finalUrl);
-                    setLoading(false);
-                }
-            })
-            .catch(() => {
-                if (!cancelled) {
-                    // Fall back to original URL — let the iframe handle the redirect
-                    setResolvedUrl(url);
-                    setLoading(false);
-                }
-            });
-
-        return () => { cancelled = true; };
-    }, [url]);
 
     // Close on Escape
     useEffect(() => {
@@ -87,17 +56,15 @@ export default function PDFViewerModal({ url, filename, onClose }: PDFViewerModa
                         {filename}
                     </span>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                        {resolvedUrl && (
-                            <a
-                                href={resolvedUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="btn btn-sm btn-ghost"
-                                style={{ fontSize: 12, padding: '3px 10px' }}
-                            >
-                                Open in new tab ↗
-                            </a>
-                        )}
+                        <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-sm btn-ghost"
+                            style={{ fontSize: 12, padding: '3px 10px' }}
+                        >
+                            Open in new tab ↗
+                        </a>
                         <button
                             className="modal-close"
                             onClick={onClose}
@@ -139,16 +106,14 @@ export default function PDFViewerModal({ url, filename, onClose }: PDFViewerModa
                         }}>
                             <span style={{ fontSize: 32 }}>⚠️</span>
                             <div style={{ fontSize: 'var(--font-sm)' }}>Could not load document.</div>
-                            {resolvedUrl && (
-                                <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-secondary">
-                                    Open in new tab
-                                </a>
-                            )}
+                            <a href={url} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-secondary">
+                                Open in new tab
+                            </a>
                         </div>
                     )}
-                    {resolvedUrl && !error && (
+                    {!error && (
                         <iframe
-                            src={resolvedUrl}
+                            src={url}
                             title={filename}
                             style={{ width: '100%', height: '100%', border: 'none', display: loading ? 'none' : 'block' }}
                             onLoad={() => setLoading(false)}

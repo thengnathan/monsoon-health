@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useUser, UserButton } from '@clerk/clerk-react';
 import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../App';
+import { useTheme } from '../contexts/ThemeContext';
 import { NotePopup } from '../pages/NotesPage';
 import { api } from '../api';
 import type { Note } from '../types';
@@ -27,9 +27,22 @@ export type LayoutOutletContext = {
 export default function Layout() {
     const { user } = useAuth();
     const { user: clerkUser } = useUser();
-    const { theme, toggle } = useTheme();
+    const { resolvedTheme: theme, toggle } = useTheme();
     const [floatingNote, setFloatingNote] = useState<Note | null | undefined>(undefined);
     const [notesRefresh, setNotesRefresh] = useState<(() => void) | null>(null);
+    const [sidebarOpen, setSidebarOpen] = useState(
+        () => localStorage.getItem('sidebarOpen') === 'true'
+    );
+
+    const openSidebar = () => {
+        setSidebarOpen(true);
+        localStorage.setItem('sidebarOpen', 'true');
+    };
+
+    const closeSidebar = () => {
+        setSidebarOpen(false);
+        localStorage.setItem('sidebarOpen', 'false');
+    };
 
     const displayName = clerkUser
         ? [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(' ') || user?.name || 'User'
@@ -53,10 +66,10 @@ export default function Layout() {
 
     return (
         <div className="app-layout">
-            <aside className="sidebar">
+            <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : 'sidebar-collapsed'}`}>
                 <div className="sidebar-brand">
                     <img src="/images/monsoon-braid-wordmark-white.svg" alt="Monsoon Health" className="sidebar-brand-wordmark" />
-                    <span>Zephyr - Screening Management</span>
+                    <span style={{ fontWeight: 700, textAlign: 'center', width: '100%' }}>Zephyr</span>
                 </div>
 
                 <nav className="sidebar-nav">
@@ -68,8 +81,8 @@ export default function Layout() {
                             end={item.end}
                             className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
                         >
-                            <span style={{ fontSize: '16px', width: 18, textAlign: 'center' }}>{item.icon}</span>
-                            {item.label}
+                            <span style={{ fontSize: '16px', width: 18, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
+                            <span className="sidebar-link-label">{item.label}</span>
                         </NavLink>
                     ))}
                 </nav>
@@ -97,9 +110,21 @@ export default function Layout() {
                         </div>
                     </div>
                 </div>
+
+                {/* Sliver indicator — visible when collapsed, click to open */}
+                <div className="sidebar-sliver-indicator" onClick={openSidebar} />
             </aside>
 
-            <main className="app-main">
+            {/* Drawer handle — outside aside to escape overflow:hidden, tracks sidebar position */}
+            <button
+                className={`sidebar-edge-handle ${sidebarOpen ? 'sidebar-open' : 'sidebar-collapsed'}`}
+                onClick={sidebarOpen ? closeSidebar : openSidebar}
+                title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            >
+                {sidebarOpen ? '‹' : '›'}
+            </button>
+
+            <main className={`app-main ${sidebarOpen ? 'sidebar-open' : 'sidebar-collapsed'}`}>
                 {/* Theme toggle — top right, vertical pill */}
                 <div className="theme-toggle-container">
                     <button className="theme-toggle-mini" onClick={toggle} title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
+import { Select } from '../components/Select';
 import type { Trial } from '../types';
 
 interface CreateForm {
@@ -121,7 +122,16 @@ export default function TrialsPage() {
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Specialty</label>
-                                    <input className="form-input" value={createForm.specialty} onChange={e => setCreateForm({ ...createForm, specialty: e.target.value })} placeholder="e.g., Hepatology" />
+                                    <Select
+                                        value={createForm.specialty}
+                                        onChange={val => setCreateForm({ ...createForm, specialty: val })}
+                                        options={[
+                                            { value: 'HEPATOLOGY', label: 'Hepatology' },
+                                            { value: 'ONCOLOGY', label: 'Oncology' },
+                                            { value: 'HEMATOLOGY', label: 'Hematology' },
+                                        ]}
+                                        placeholder="Select specialty…"
+                                    />
                                 </div>
                             </div>
                             <div className="form-group">

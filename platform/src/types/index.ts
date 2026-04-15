@@ -12,6 +12,8 @@ export interface DbUser {
     updated_at: string;
 }
 
+export type PatientSpecialty = 'HEPATOLOGY' | 'ONCOLOGY' | 'HEMATOLOGY';
+
 export interface Patient {
     id: string;
     site_id: string;
@@ -23,6 +25,7 @@ export interface Patient {
     referral_source_name?: string | null;
     referral_date: string | null;
     notes: string | null;
+    specialty: PatientSpecialty | null;
     created_at: string;
     updated_at: string;
 }
@@ -107,6 +110,8 @@ export interface SignalRule {
     min_value: number | null;
     max_value: number | null;
     source: string;
+    category: string | null;
+    cohort: string | null;
 }
 
 export interface TrialProtocolRef {
@@ -265,11 +270,12 @@ export interface ScreeningCaseDetail extends ScreeningCase {
 export interface SignalType {
     id: string;
     site_id: string;
+    name: string;
     label: string;
-    code: string;
-    data_type: string;
+    value_type: string;
     unit: string | null;
     specialty: string | null;
+    category: string | null;
 }
 
 export interface ScreenFailReason {
@@ -494,6 +500,8 @@ export interface SpecialtyTemplate {
 export interface SitePatientProfileConfig {
     specialties: SpecialtyKey[];
     enabled_options: string[];
+    trial_profile_specialties?: SpecialtyKey[];
+    trial_profile_signals?: Partial<Record<SpecialtyKey, string[]>>;
 }
 
 export interface SiteConfig {

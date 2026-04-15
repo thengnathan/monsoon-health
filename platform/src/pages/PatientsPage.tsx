@@ -4,7 +4,14 @@ import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDate } from '../utils';
-import type { Patient, ReferralSource, UploadResult, BatchImportResult, PatientClinicalData } from '../types';
+import { Select } from '../components/Select';
+import type { Patient, ReferralSource, UploadResult, BatchImportResult, PatientClinicalData, PatientSpecialty } from '../types';
+
+const SPECIALTY_COLORS: Record<PatientSpecialty, { color: string; bg: string; label: string }> = {
+    HEPATOLOGY: { color: '#4a90c4', bg: 'rgba(74,144,196,0.12)', label: 'Hepatology' },
+    ONCOLOGY:   { color: '#c4744a', bg: 'rgba(196,116,74,0.12)', label: 'Oncology' },
+    HEMATOLOGY: { color: '#7a4ac4', bg: 'rgba(122,74,196,0.12)', label: 'Hematology' },
+};
 
 interface PatientForm {
     first_name: string;
@@ -163,7 +170,7 @@ export default function PatientsPage() {
                     <h1>Patients</h1>
                     <p>Search and manage your patient registry</p>
                 </div>
-                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                <div style={{ display: 'flex', gap: 'var(--space-3)', paddingRight: '3rem' }}>
                     <button className="btn btn-secondary" onClick={copyIntakeLink}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: -2 }}><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" /></svg>
                         Intake Link
@@ -232,15 +239,33 @@ export default function PatientsPage() {
                         <thead>
                             <tr>
                                 <th style={{ width: 40, paddingRight: 0 }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={patients.length > 0 && selectedIds.size === patients.length}
-                                        ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < patients.length; }}
-                                        onChange={toggleSelectAll}
-                                        style={{ cursor: 'pointer' }}
-                                    />
+                                    {(() => {
+                                        const allChecked = patients.length > 0 && selectedIds.size === patients.length;
+                                        const indeterminate = selectedIds.size > 0 && selectedIds.size < patients.length;
+                                        return (
+                                            <span onClick={toggleSelectAll} style={{
+                                                width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                                                border: `1.5px solid ${(allChecked || indeterminate) ? 'var(--accent-sea-blue)' : 'var(--border-strong)'}`,
+                                                background: (allChecked || indeterminate) ? 'var(--accent-sea-blue)' : 'transparent',
+                                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                                cursor: 'pointer', transition: 'all 0.15s', opacity: (allChecked || indeterminate) ? 0.85 : 1,
+                                            }}>
+                                                {allChecked && (
+                                                    <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+                                                        <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                                    </svg>
+                                                )}
+                                                {indeterminate && (
+                                                    <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+                                                        <path d="M2 4.5h5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
+                                                    </svg>
+                                                )}
+                                            </span>
+                                        );
+                                    })()}
                                 </th>
                                 <th>Patient</th>
+                                <th>Specialty</th>
                                 <th>DOB</th>
                                 <th>ID</th>
                                 <th>Referral Source</th>
@@ -258,22 +283,48 @@ export default function PatientsPage() {
                                         style={{ cursor: 'pointer', background: selectedIds.has(p.id) ? 'var(--accent-muted)' : isExpanded ? 'var(--bg-secondary)' : undefined }}
                                     >
                                         <td style={{ width: 40, paddingRight: 0 }} onClick={e => { e.stopPropagation(); toggleSelect(p.id); }}>
-                                            <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)} style={{ cursor: 'pointer' }} />
+                                            <span style={{
+                                                width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                                                border: `1.5px solid ${selectedIds.has(p.id) ? 'var(--accent-sea-blue)' : 'var(--border-strong)'}`,
+                                                background: selectedIds.has(p.id) ? 'var(--accent-sea-blue)' : 'transparent',
+                                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                                cursor: 'pointer', transition: 'all 0.15s', opacity: selectedIds.has(p.id) ? 0.85 : 1,
+                                            }}>
+                                                {selectedIds.has(p.id) && (
+                                                    <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+                                                        <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                                    </svg>
+                                                )}
+                                            </span>
                                         </td>
                                         <td className="patient-name" onClick={e => { e.stopPropagation(); navigate(`/patients/${p.id}`); }} style={{ color: 'var(--accent)', cursor: 'pointer' }}>
                                             {p.last_name}, {p.first_name}
                                         </td>
+                                        <td className="meta">
+                                            {p.specialty ? (
+                                                <span style={{
+                                                    fontSize: 11, fontWeight: 600, padding: '2px 8px',
+                                                    borderRadius: 'var(--radius-full)',
+                                                    background: SPECIALTY_COLORS[p.specialty].bg,
+                                                    color: SPECIALTY_COLORS[p.specialty].color,
+                                                }}>
+                                                    {SPECIALTY_COLORS[p.specialty].label}
+                                                </span>
+                                            ) : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
+                                        </td>
                                         <td>{formatDate(p.dob)}</td>
                                         <td className="meta">{p.internal_identifier || '—'}</td>
                                         <td className="meta">{p.referral_source_name || '—'}</td>
-                                        <td className="meta" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                            {formatDate(p.created_at)}
-                                            <span style={{ color: 'var(--text-tertiary)', fontSize: 10, marginLeft: 8 }}>{isExpanded ? '▲' : '▼'}</span>
+                                        <td className="meta">
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                {formatDate(p.created_at)}
+                                                <span style={{ color: 'var(--text-tertiary)', fontSize: 10, marginLeft: 8 }}>{isExpanded ? '▲' : '▼'}</span>
+                                            </div>
                                         </td>
                                     </tr>,
                                     isExpanded && (
                                         <tr key={`${p.id}-expand`} style={{ background: 'var(--bg-secondary)' }}>
-                                            <td colSpan={6} style={{ padding: 'var(--space-3) var(--space-4)', borderTop: '1px solid var(--border)' }}>
+                                            <td colSpan={7} style={{ padding: 'var(--space-3) var(--space-4)', borderTop: '1px solid var(--border)' }}>
                                                 {!(p.id in summaries) ? (
                                                     <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>Loading…</div>
                                                 ) : !cd ? (
@@ -281,56 +332,73 @@ export default function PatientsPage() {
                                                         No clinical data extracted yet.{' '}
                                                         <span style={{ color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/patients/${p.id}`)}>Open profile to upload a document.</span>
                                                     </div>
-                                                ) : (
-                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
-                                                        {cd.diagnoses.length > 0 && (
-                                                            <div>
-                                                                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Diagnoses</div>
-                                                                {cd.diagnoses.filter(d => d.status !== 'resolved').slice(0, 4).map((d, i) => (
-                                                                    <div key={i} style={{ fontSize: 'var(--font-sm)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                                                                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: d.status === 'active' ? '#28a745' : '#ffc107', flexShrink: 0 }} />
-                                                                        {d.name}
+                                                ) : (() => {
+                                                    let previewCfg: Record<string, boolean> = { diagnoses: true, labs: true, imaging: true, medications: true };
+                                                    try { const raw = localStorage.getItem('patientPreviewConfig'); if (raw) previewCfg = JSON.parse(raw); } catch {}
+                                                    return (
+                                                    <div style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'stretch' }}>
+                                                        {/* Left: clinical data */}
+                                                        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                                                            {/* Diagnoses / Labs / Medications grid */}
+                                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
+                                                                {previewCfg.diagnoses && cd.diagnoses.length > 0 && (
+                                                                    <div>
+                                                                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Diagnoses</div>
+                                                                        {cd.diagnoses.filter(d => d.status !== 'resolved').slice(0, 4).map((d, i) => (
+                                                                            <div key={i} style={{ fontSize: 'var(--font-sm)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                                                                <span style={{ width: 5, height: 5, borderRadius: '50%', background: d.status === 'active' ? '#28a745' : '#ffc107', flexShrink: 0 }} />
+                                                                                {d.name}
+                                                                            </div>
+                                                                        ))}
                                                                     </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                        {Object.keys(cd.labs_latest).length > 0 && (
-                                                            <div>
-                                                                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Latest Labs</div>
-                                                                {Object.entries(cd.labs_latest).slice(0, 4).map(([name, lab]) => (
-                                                                    <div key={name} style={{ fontSize: 'var(--font-sm)', display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                                                                        <span style={{ color: 'var(--text-secondary)' }}>{name}</span>
-                                                                        <span style={{ fontWeight: 600 }}>{lab.value} <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', fontSize: 11 }}>{lab.unit}</span></span>
+                                                                )}
+                                                                {previewCfg.labs && Object.keys(cd.labs_latest).length > 0 && (
+                                                                    <div>
+                                                                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Latest Labs</div>
+                                                                        {Object.entries(cd.labs_latest).slice(0, 4).map(([name, lab]) => (
+                                                                            <div key={name} style={{ fontSize: 'var(--font-sm)', display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                                                                                <span style={{ color: 'var(--text-secondary)' }}>{name}</span>
+                                                                                <span style={{ fontWeight: 600 }}>{lab.value} <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', fontSize: 11 }}>{lab.unit}</span></span>
+                                                                            </div>
+                                                                        ))}
                                                                     </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                        {Object.keys(cd.imaging_latest).length > 0 && (
-                                                            <div>
-                                                                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Imaging</div>
-                                                                {Object.entries(cd.imaging_latest).map(([type, img]) => (
-                                                                    <div key={type} style={{ fontSize: 'var(--font-sm)', display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                                                                        <span style={{ color: 'var(--text-secondary)' }}>{type}</span>
-                                                                        <span style={{ fontWeight: 600 }}>{img.value !== undefined ? `${img.value} ${img.unit || ''}` : '—'}</span>
+                                                                )}
+                                                                {previewCfg.medications && cd.medications.length > 0 && (
+                                                                    <div>
+                                                                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Medications</div>
+                                                                        {cd.medications.slice(0, 4).map((m, i) => (
+                                                                            <div key={i} style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', marginBottom: 2 }}>{m.name}{m.dose ? ` ${m.dose}` : ''}</div>
+                                                                        ))}
                                                                     </div>
-                                                                ))}
+                                                                )}
                                                             </div>
-                                                        )}
-                                                        {cd.medications.length > 0 && (
-                                                            <div>
-                                                                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Medications</div>
-                                                                {cd.medications.slice(0, 4).map((m, i) => (
-                                                                    <div key={i} style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', marginBottom: 2 }}>{m.name}{m.dose ? ` ${m.dose}` : ''}</div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                                                            <button className="btn btn-sm btn-primary" onClick={() => navigate(`/patients/${p.id}`)}>
+
+                                                            {/* Imaging — compact inline preview */}
+                                                            {previewCfg.imaging && Object.keys(cd.imaging_latest).length > 0 && (
+                                                                <div>
+                                                                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Imaging</div>
+                                                                    {Object.entries(cd.imaging_latest).map(([type, img]) => (
+                                                                        <div key={type} style={{ fontSize: 'var(--font-sm)', marginBottom: 2 }}>
+                                                                            <span style={{ color: 'var(--text-secondary)' }}>{type}: </span>
+                                                                            <span style={{ fontWeight: 600 }}>{img.value !== undefined ? `${img.value}${img.unit ? ` ${img.unit}` : ''}` : '—'}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Right: button centered vertically */}
+                                                        <div style={{
+                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                            paddingLeft: 'var(--space-4)', flexShrink: 0,
+                                                        }}>
+                                                            <button className="btn btn-sm btn-primary" onClick={e => { e.stopPropagation(); navigate(`/patients/${p.id}`); }}>
                                                                 View Full Profile →
                                                             </button>
                                                         </div>
                                                     </div>
-                                                )}
+                                                    );
+                                                })()}
                                             </td>
                                         </tr>
                                     )
@@ -575,10 +643,14 @@ export default function PatientsPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Referral Source</label>
-                                    <select className="form-select" value={form.referral_source_id} onChange={e => setForm({ ...form, referral_source_id: e.target.value })}>
-                                        <option value="">None</option>
-                                        {referralSources.map(rs => <option key={rs.id} value={rs.id}>{rs.name}</option>)}
-                                    </select>
+                                    <Select
+                                        value={form.referral_source_id}
+                                        onChange={val => setForm({ ...form, referral_source_id: val })}
+                                        options={[
+                                            { value: '', label: 'None' },
+                                            ...referralSources.map(rs => ({ value: rs.id, label: rs.name })),
+                                        ]}
+                                    />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Referral Date</label>
