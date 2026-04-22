@@ -348,12 +348,13 @@ function FootnotesCollapsible({ footnotes }: { footnotes: SoaFootnote[] }) {
 function CriteriaTab({ data, animating }: { data: StructuredData; animating?: boolean }) {
     const [inclusionOpen, setInclusionOpen] = useState(true);
     const [exclusionOpen, setExclusionOpen] = useState(true);
-    const hasStructured = (data.inclusion_structured?.length ?? 0) > 0 || (data.exclusion_structured?.length ?? 0) > 0;
-    const inclusionCount = hasStructured
-        ? (data.inclusion_structured?.reduce((n, cat) => n + cat.criteria.length, 0) ?? 0)
+    const hasInclusionStructured = data.inclusion_structured?.some(cat => (cat.criteria?.length ?? 0) > 0) ?? false;
+    const hasExclusionStructured = data.exclusion_structured?.some(cat => (cat.criteria?.length ?? 0) > 0) ?? false;
+    const inclusionCount = hasInclusionStructured
+        ? (data.inclusion_structured!.reduce((n, cat) => n + (cat.criteria?.length ?? 0), 0))
         : (data.inclusion_criteria?.length ?? 0);
-    const exclusionCount = hasStructured
-        ? (data.exclusion_structured?.reduce((n, cat) => n + cat.criteria.length, 0) ?? 0)
+    const exclusionCount = hasExclusionStructured
+        ? (data.exclusion_structured!.reduce((n, cat) => n + (cat.criteria?.length ?? 0), 0))
         : (data.exclusion_criteria?.length ?? 0);
 
     return (
@@ -372,8 +373,8 @@ function CriteriaTab({ data, animating }: { data: StructuredData; animating?: bo
                 </button>
                 {inclusionOpen && (
                     <div style={{ padding: 'var(--space-4)' }}>
-                        {hasStructured && data.inclusion_structured?.length ? (
-                            <ExclusionStructuredList categories={data.inclusion_structured} animating={animating} />
+                        {hasInclusionStructured ? (
+                            <ExclusionStructuredList categories={data.inclusion_structured!} animating={animating} />
                         ) : (
                             <FlatCriteriaList items={data.inclusion_criteria ?? []} animating={animating} />
                         )}
@@ -395,8 +396,8 @@ function CriteriaTab({ data, animating }: { data: StructuredData; animating?: bo
                 </button>
                 {exclusionOpen && (
                     <div style={{ padding: 'var(--space-4)' }}>
-                        {hasStructured && data.exclusion_structured?.length ? (
-                            <ExclusionStructuredList categories={data.exclusion_structured} animating={animating} startIndex={inclusionCount} />
+                        {hasExclusionStructured ? (
+                            <ExclusionStructuredList categories={data.exclusion_structured!} animating={animating} startIndex={inclusionCount} />
                         ) : (
                             <FlatCriteriaList items={data.exclusion_criteria ?? []} animating={animating} startIndex={inclusionCount} />
                         )}
@@ -425,7 +426,7 @@ function ExclusionStructuredList({ categories, animating, startIndex = 0 }: { ca
                         </div>
                     )}
                     <ol style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {cat.criteria.map(c => {
+                        {(cat.criteria ?? []).map(c => {
                             const idx = globalIndex++;
                             return (
                                 <li

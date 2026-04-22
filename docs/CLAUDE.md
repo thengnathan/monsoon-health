@@ -88,19 +88,42 @@ Three independent apps — `platform/` (React SPA), `server/` (Express API), `ma
 
 ## Protocol Extraction Architecture
 
-Two sequential AI calls in `server/src/services/aiIngestion.ts`:
-1. **Call 1** — metadata, all visits (ALL cohorts, prefixed names), criteria, signal rules (max 6)
-2. **Call 2** — Schedule of Assessments per visit (ALL SoA tables, never skip administrative items)
+Two AI calls in `server/src/services/aiIngestion.ts`:
 
-Visit name fuzzy matching (3 tiers): exact → normalized (em-dash/whitespace) → partial substring.
+**Call 1** — `claudeExtractFromPDF` (32k tokens): metadata, all visits (ALL cohorts, prefixed `"Cohort X - Visit Name"`), inclusion_structured + exclusion_structured (both grouped by cohort), signal rules (up to 6 per cohort). Saved immediately via `onCall1Complete` callback so UI updates before Call 2 finishes.
 
-Frontend polling (`TrialDetailPage`):
-- **Phase 1:** Poll until Call 1 data appears → dismiss overlay, start card-reveal animation
-- **Phase 2:** Continue polling silently until `extracted_visits` in `structured_data` arrives
-- **Navigation persistence:** Write `extracting_<id>` timestamp to `sessionStorage` on poll start; on component mount check if key exists + < 5 min old + extraction incomplete → resume `startExtractionPoll({ silent: true })`
+**Call 2** — SoA assessments (64k tokens): one call per cohort, run in **parallel** via `Promise.allSettled`. Each call receives the exact visit names from Call 1 to use as JSON keys (eliminates name mismatch). `detectCohortGroups()` splits by prefix when ≥2 distinct prefixes each appear on ≥2 visits.
+
+**SoA visit name mapping:** `applyAssessmentsToVisits()` merges Call 2 results onto `extracted_visits` using 3-tier fuzzy match: exact → normalized (em-dash/whitespace) → partial substring. Logs matched/unmatched visits to server console for debugging.
+
+**Re-extraction flow:** clears `visit_templates`, `trial_signal_rules` (ai_extracted), `trials.inclusion/exclusion_criteria`, and `trial_protocols.structured_data` **synchronously before responding** — ensures first poll sees empty state instead of stale data.
+
+**Frontend polling (`TrialDetailPage`):**
+- `cache: 'no-store'` on all API requests — prevents 304 stale responses during polling
+- **Phase 1:** Poll (3s interval) until `visit_templates.length > 0` or `signal_rules.length > 0` → dismiss overlay, start card-reveal animation. Timeout: 40 attempts (2 min).
+- **Phase 2:** Continue polling silently until `extracted_visits.some(v => v.assessments.length > 0)` — NOT just `extracted_visits.length > 0` (which fires too early after Call 1 partial save). Hard cap: 60 attempts (3 min).
+- **Navigation persistence:** Write `extracting_<id>` timestamp to `sessionStorage` on poll start; on mount check if key exists + < 5 min old + extraction incomplete → resume `startExtractionPoll({ silent: true })`
 
 ---
 
-## Signal Rules UI
-- Display signal type option labels WITHOUT data_type suffix — no `(Match)`, `(Numeric)`, etc.
-- Max 6 signal rules per trial, surfaced from AI extraction
+## Signal Rules Architecture
+
+**Extraction:** Up to 6 rules per cohort. Each rule has a `cohort` field (`null` = main study, `"Cohort D"` = cohort-specific). Stored in `trial_signal_rules.cohort` (migration 012).
+
+**Display (TrialDetailPage):** Filtered to only show rules matching the site's Trial Profile signals for that specialty (by `signal_type_id` or label match). Grouped by cohort (outer, "Main Study" first) then category (inner). Cohort headers only shown when multiple cohorts exist.
+
+**Trial Profile (Settings):** Per-specialty signal selection stored in `sites.patient_profile_config` JSONB under `trial_profile_signals: { HEPATOLOGY: [id,...], ... }`. Drives both signal rule filtering on trial detail and signal type dropdown in the Add Rule modal.
+
+---
+
+## Criteria Display
+
+`inclusion_structured` and `exclusion_structured` both use `ExclusionCategory[]` shape: `{ category: string|null, note: string|null, criteria: [...] }[]`. Category is the cohort/arm label ("Main Study", "Cohort D") or a protocol section header for exclusion. Rendered by `ExclusionStructuredList` in `ProtocolViewer.tsx` for both panels.
+
+---
+
+## Database Notes
+
+- **Pool config:** `max: 5`, `idleTimeoutMillis: 30000`, `connectionTimeoutMillis: 5000` — prevents connection exhaustion during polling + background extraction.
+- **Trial GET queries:** Sequential (not `Promise.all`) to avoid consuming all pool slots in one request burst.
+- **Migration 012** (`server/db/migrations/012_signal_rule_cohort.sql`): Adds `cohort VARCHAR(128)` to `trial_signal_rules`. Must be run before re-extraction or signal rule inserts will fail silently.

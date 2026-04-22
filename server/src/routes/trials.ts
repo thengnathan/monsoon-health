@@ -162,9 +162,9 @@ router.get('/:id', async (req: Request, res: Response) => {
     if (!trial) { res.status(404).json({ error: 'Trial not found' }); return; }
 
     const rules = await db.query(
-        `SELECT tsr.*, st.name as signal_name, COALESCE(st.label, tsr.signal_label) as signal_label, COALESCE(st.unit, '') as unit, st.value_type, st.category
+        `SELECT tsr.*, st.name as signal_name, COALESCE(st.label, tsr.signal_label) as signal_label, COALESCE(st.unit, '') as unit, st.value_type
          FROM trial_signal_rules tsr LEFT JOIN signal_types st ON tsr.signal_type_id = st.id
-         WHERE tsr.trial_id = $1 AND tsr.site_id = $2 ORDER BY st.category NULLS LAST, COALESCE(st.label, tsr.signal_label)`,
+         WHERE tsr.trial_id = $1 AND tsr.site_id = $2 ORDER BY COALESCE(st.label, tsr.signal_label)`,
         [req.params.id, req.user.site_id]
     );
     const cases = await db.query(
