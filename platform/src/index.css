@@ -24,16 +24,16 @@
 }
 
 :root {
-  /* ── Stormy Morning — Dark Mode ── */
-  --surface-primary:   #0f1117;
-  --surface-secondary: #161922;
-  --surface-elevated:  #232836;
-  --surface-tertiary:  #1e2230;
-  --surface-overlay:   rgba(0, 0, 0, 0.5);
+  /* ── Stormy Morning — Dark Mode (Darker variant) ── */
+  --surface-primary:   #08090e;
+  --surface-secondary: #0d0f16;
+  --surface-elevated:  #141824;
+  --surface-tertiary:  #111520;
+  --surface-overlay:   rgba(0, 0, 0, 0.65);
 
-  /* Borders */
-  --border-default: rgba(255, 255, 255, 0.08);
-  --border-strong:  rgba(255, 255, 255, 0.14);
+  /* Borders — slightly more visible against deeper backgrounds */
+  --border-default: rgba(255, 255, 255, 0.10);
+  --border-strong:  rgba(255, 255, 255, 0.18);
   --border-focus:   #5BB8D4;
 
   /* Text */
