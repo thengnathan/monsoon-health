@@ -6,6 +6,7 @@ import { useSiteConfig } from '../contexts/SiteConfigContext';
 import { StatusBadge, formatDate } from '../utils';
 import PDFViewerModal from '../components/PDFViewerModal';
 import { Select } from '../components/Select';
+import { Icon } from '../components/Icon';
 import type {
     PatientDetail, PatientClinicalData, SignalType, Trial,
     LabValue, VitalValue, ImagingResult, ClinicalDiagnosis,
@@ -84,7 +85,7 @@ function LabsSection({ latest, timeline }: { latest: Record<string, LabValue>; t
             </table>
             {timeline.length > entries.length && (
                 <button className="btn btn-sm btn-ghost" style={{ marginTop: 'var(--space-2)', fontSize: 'var(--font-xs)' }} onClick={() => setShowTimeline(v => !v)}>
-                    {showTimeline ? '▲ Hide timeline' : `▼ Show timeline (${timeline.length} values)`}
+                    {showTimeline ? <><Icon name="chevron-up" size={12} /> Hide timeline</> : <><Icon name="chevron-down" size={12} /> Show timeline ({timeline.length} values)</>}
                 </button>
             )}
             {showTimeline && (
@@ -162,7 +163,7 @@ function ImagingSection({ latest, timeline }: { latest: Record<string, ImagingRe
             ))}
             {timeline.length > entries.length && (
                 <button className="btn btn-sm btn-ghost" style={{ fontSize: 'var(--font-xs)' }} onClick={() => setShowTimeline(v => !v)}>
-                    {showTimeline ? '▲ Hide timeline' : `▼ Show timeline (${timeline.length} results)`}
+                    {showTimeline ? <><Icon name="chevron-up" size={12} /> Hide timeline</> : <><Icon name="chevron-down" size={12} /> Show timeline ({timeline.length} results)</>}
                 </button>
             )}
             {showTimeline && (
@@ -261,8 +262,8 @@ function MatchHistorySection({ signals }: { signals: ProtocolSignal[] }) {
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                     {sig.criteria_breakdown.map((c, i) => (
                                         <div key={i} style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-start', fontSize: 'var(--font-xs)' }}>
-                                            <span style={{ flexShrink: 0, fontWeight: 700, color: c.status === 'PASS' ? '#155724' : c.status === 'FAIL' ? '#721c24' : '#6c757d' }}>
-                                                {c.status === 'PASS' ? '✓' : c.status === 'FAIL' ? '✗' : '?'}
+                                            <span style={{ flexShrink: 0, display: 'inline-flex', marginTop: 1, color: c.status === 'PASS' ? '#155724' : c.status === 'FAIL' ? '#721c24' : '#6c757d' }}>
+                                                {c.status === 'PASS' ? <Icon name="check" size={13} strokeWidth={2.5} /> : c.status === 'FAIL' ? <Icon name="x" size={13} strokeWidth={2.5} /> : '?'}
                                             </span>
                                             <div>
                                                 <span style={{ color: 'var(--text-tertiary)' }}>[{c.type}]</span>{' '}
@@ -350,8 +351,8 @@ function SignalAlignmentSection({ alignment }: { alignment: SignalRuleAlignment[
                                             {rule.patient_signal_date && <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 4 }}>({formatDate(rule.patient_signal_date)})</span>}
                                         </td>
                                         <td style={{ padding: '6px', textAlign: 'center', fontSize: 13, fontWeight: 700 }}>
-                                            {rule.passes === true && <span style={{ color: '#155724' }}>✓</span>}
-                                            {rule.passes === false && <span style={{ color: '#721c24' }}>✗</span>}
+                                            {rule.passes === true && <span style={{ color: '#155724', display: 'inline-flex' }}><Icon name="check" size={14} strokeWidth={2.5} /></span>}
+                                            {rule.passes === false && <span style={{ color: '#721c24', display: 'inline-flex' }}><Icon name="x" size={14} strokeWidth={2.5} /></span>}
                                             {rule.passes === null && <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
                                         </td>
                                     </tr>
@@ -384,7 +385,7 @@ function ExtractionReviewModal({ result, onMatch, matching, onClose }: {
             <div className="modal">
                 <div className="modal-header">
                     <h3 className="modal-title">Extraction Complete</h3>
-                    <button className="modal-close" onClick={onClose}>✕</button>
+                    <button className="modal-close" onClick={onClose}><Icon name="x" size={16} /></button>
                 </div>
 
                 {counts.length > 0 && (
@@ -655,7 +656,7 @@ export default function PatientDetailPage() {
 
                     {/* Back */}
                     <Link to="/patients" style={{ color: 'var(--text-tertiary)', textDecoration: 'none', fontSize: 'var(--font-sm)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                        ← Patients
+                        <Icon name="arrow-left" size={15} /> Patients
                     </Link>
 
                     {/* Identity card */}
@@ -766,7 +767,7 @@ export default function PatientDetailPage() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingRight: '2.5rem' }}>
                         <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}
                             onClick={() => docFileRef.current?.click()} disabled={uploading}>
-                            {uploading ? 'Uploading…' : '↑ Upload Document'}
+                            {uploading ? 'Uploading…' : <><Icon name="arrow-up" size={15} /> Upload Document</>}
                         </button>
                         <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}
                             onClick={() => setShowSignalModal(true)}>
@@ -835,7 +836,7 @@ export default function PatientDetailPage() {
                                                 </table>
                                                 {clinicalData && Object.keys(clinicalData.labs_latest).some(k => !matchedNames.has(k)) && (
                                                     <details style={{ marginTop: 'var(--space-3)' }}>
-                                                        <summary style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', cursor: 'pointer', listStyle: 'none', userSelect: 'none' }}>▶ Additional extracted labs</summary>
+                                                        <summary style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', cursor: 'pointer', listStyle: 'none', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 4 }}><Icon name="chevron-right" size={11} /> Additional extracted labs</summary>
                                                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-sm)', marginTop: 'var(--space-2)' }}>
                                                             <tbody>
                                                                 {Object.entries(clinicalData.labs_latest).filter(([k]) => !matchedNames.has(k)).map(([name, lab]) => (
@@ -891,7 +892,7 @@ export default function PatientDetailPage() {
                                                 </table>
                                                 {clinicalData && Object.keys(clinicalData.vitals_latest).some(k => !matchedNames.has(k)) && (
                                                     <details style={{ marginTop: 'var(--space-3)' }}>
-                                                        <summary style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', cursor: 'pointer', listStyle: 'none', userSelect: 'none' }}>▶ Additional vitals</summary>
+                                                        <summary style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', cursor: 'pointer', listStyle: 'none', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 4 }}><Icon name="chevron-right" size={11} /> Additional vitals</summary>
                                                         <div style={{ marginTop: 'var(--space-2)' }}>
                                                             {Object.entries(clinicalData.vitals_latest).filter(([k]) => !matchedNames.has(k)).map(([name, v]) => (
                                                                 <div key={name} style={{ fontSize: 'var(--font-sm)', display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
@@ -947,7 +948,7 @@ export default function PatientDetailPage() {
                                             </div>
                                             {clinicalData && Object.keys(clinicalData.imaging_latest).some(k => !matchedNames.has(k)) && (
                                                 <details style={{ marginTop: 'var(--space-3)' }}>
-                                                    <summary style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', cursor: 'pointer', listStyle: 'none', userSelect: 'none' }}>▶ Additional imaging</summary>
+                                                    <summary style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', cursor: 'pointer', listStyle: 'none', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 4 }}><Icon name="chevron-right" size={11} /> Additional imaging</summary>
                                                     <ImagingSection latest={Object.fromEntries(Object.entries(clinicalData.imaging_latest).filter(([k]) => !matchedNames.has(k)))} timeline={[]} />
                                                 </details>
                                             )}
@@ -973,7 +974,7 @@ export default function PatientDetailPage() {
                                         <div className="signal-timeline">
                                             {patient.signals.slice(0, 10).map(sig => (
                                                 <div key={sig.id} className="signal-item">
-                                                    <div className="signal-dot">◉</div>
+                                                    <div className="signal-dot"><Icon name="target" size={14} /></div>
                                                     <div className="signal-info">
                                                         <div className="signal-label">{sig.signal_label}</div>
                                                         <div className="signal-value">
@@ -1169,7 +1170,7 @@ export default function PatientDetailPage() {
                             ) : (
                                 (patient.documents as { id: string; filename: string; document_type: string; created_at: string }[]).map(doc => (
                                     <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 'var(--font-sm)' }}>
-                                        <span style={{ fontSize: 18 }}>📄</span>
+                                        <span style={{ display: 'inline-flex', color: 'var(--text-secondary)', flexShrink: 0 }}><Icon name="file" size={18} /></span>
                                         <div style={{ flex: 1, minWidth: 0 }}>
                                             <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.filename}</div>
                                             <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)' }}>{doc.document_type} · {formatDate(doc.created_at)}</div>
@@ -1201,7 +1202,7 @@ export default function PatientDetailPage() {
                     <div className="modal">
                         <div className="modal-header">
                             <h3 className="modal-title">Record Signal</h3>
-                            <button className="modal-close" onClick={() => setShowSignalModal(false)}>✕</button>
+                            <button className="modal-close" onClick={() => setShowSignalModal(false)}><Icon name="x" size={16} /></button>
                         </div>
                         <form onSubmit={handleAddSignal}>
                             <div className="form-group">
@@ -1244,7 +1245,7 @@ export default function PatientDetailPage() {
                     <div className="modal">
                         <div className="modal-header">
                             <h3 className="modal-title">Create Screening Case</h3>
-                            <button className="modal-close" onClick={() => setShowCaseModal(false)}>✕</button>
+                            <button className="modal-close" onClick={() => setShowCaseModal(false)}><Icon name="x" size={16} /></button>
                         </div>
                         <form onSubmit={handleCreateCase}>
                             <div className="form-group">

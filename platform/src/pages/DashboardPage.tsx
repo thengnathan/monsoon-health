@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
-import { StatusBadge, formatDate, isOverdue } from '../utils';
+import { StatusBadge, formatDate, formatDateTime, isOverdue } from '../utils';
+import { Icon } from '../components/Icon';
 import type { TodayData, UpcomingVisit, NotificationEvent } from '../types';
 
 export default function DashboardPage() {
@@ -11,32 +12,48 @@ export default function DashboardPage() {
     const [error, setError] = useState<string | null>(null);
     const navigate = useNavigate();
 
-    const load = () => {
-        setLoading(true);
-        setError(null);
+    // silent = background refresh: don't show the skeleton or clobber the screen
+    // with an error if it fails — just keep the last good data.
+    const load = useCallback((silent = false) => {
+        if (!silent) setLoading(true);
         Promise.all([
             api.getToday(),
             api.getUpcomingVisits().catch(() => [] as UpcomingVisit[])
         ]).then(([todayData, visits]) => {
             setData(todayData);
             setUpcomingVisits(visits);
+            setError(null);
         }).catch((err: unknown) => {
             console.error(err);
-            setError(err instanceof Error ? err.message : 'Failed to load dashboard');
-        }).finally(() => setLoading(false));
-    };
+            if (!silent) setError(err instanceof Error ? err.message : 'Failed to load dashboard');
+        }).finally(() => { if (!silent) setLoading(false); });
+    }, []);
 
-    useEffect(load, []);
+    useEffect(() => { load(); }, [load]);
 
-    if (loading) return <div className="loading-spinner"><div className="spinner" /></div>;
+    // Keep a long-lived dashboard current: silent refetch on tab focus and every
+    // 60s while visible. No skeleton flash, no interruption.
+    useEffect(() => {
+        const onVisible = () => { if (document.visibilityState === 'visible') load(true); };
+        document.addEventListener('visibilitychange', onVisible);
+        window.addEventListener('focus', onVisible);
+        const interval = setInterval(onVisible, 60000);
+        return () => {
+            document.removeEventListener('visibilitychange', onVisible);
+            window.removeEventListener('focus', onVisible);
+            clearInterval(interval);
+        };
+    }, [load]);
+
+    if (loading) return <DashboardSkeleton />;
 
     if (error || !data) {
         return (
             <div className="empty-state" style={{ maxWidth: 420, margin: '4rem auto' }}>
-                <div className="empty-state-icon">⚠</div>
+                <div className="empty-state-icon"><Icon name="alert" size={40} strokeWidth={1.5} /></div>
                 <h3>Couldn't load your dashboard</h3>
                 <p style={{ marginBottom: 'var(--space-6)' }}>{error || 'No data returned.'}</p>
-                <button className="btn btn-primary" onClick={load}>Try again</button>
+                <button className="btn btn-primary" onClick={() => load()}>Try again</button>
             </div>
         );
     }
@@ -50,26 +67,11 @@ export default function DashboardPage() {
 
             {/* Stats */}
             <div className="stats-grid">
-                <div className="stat-card animate-in">
-                    <div className="stat-label">Active Cases</div>
-                    <div className="stat-value accent">{data.stats.total_active_cases}</div>
-                </div>
-                <div className="stat-card animate-in">
-                    <div className="stat-label">Open Items</div>
-                    <div className="stat-value">{data.stats.pending_items_open}</div>
-                </div>
-                <div className="stat-card animate-in">
-                    <div className="stat-label">Patients</div>
-                    <div className="stat-value">{data.stats.total_patients}</div>
-                </div>
-                <div className="stat-card animate-in">
-                    <div className="stat-label">Active Trials</div>
-                    <div className="stat-value">{data.stats.active_trials}</div>
-                </div>
-                <div className="stat-card animate-in">
-                    <div className="stat-label">Enrolled</div>
-                    <div className="stat-value" style={{ color: 'var(--status-enrolled)' }}>{data.stats.cases_enrolled}</div>
-                </div>
+                <StatCard label="Active Cases" value={data.stats.total_active_cases} accent onClick={() => navigate('/screening')} />
+                <StatCard label="Open Items" value={data.stats.pending_items_open} />
+                <StatCard label="Patients" value={data.stats.total_patients} onClick={() => navigate('/patients')} />
+                <StatCard label="Active Trials" value={data.stats.active_trials} onClick={() => navigate('/trials')} />
+                <StatCard label="Enrolled" value={data.stats.cases_enrolled} valueColor="var(--status-enrolled)" onClick={() => navigate('/screening?status=ENROLLED')} />
             </div>
 
             <div className="detail-grid">
@@ -79,7 +81,7 @@ export default function DashboardPage() {
                         <div className="detail-section-title">Active Cases — Needs Attention</div>
                         {data.active_cases.length === 0 ? (
                             <div className="empty-state">
-                                <div className="empty-state-icon">✓</div>
+                                <div className="empty-state-icon"><Icon name="check-circle" size={40} strokeWidth={1.5} /></div>
                                 <h3>All caught up</h3>
                                 <p>No screening cases needing immediate attention.</p>
                             </div>
@@ -107,7 +109,7 @@ export default function DashboardPage() {
                         ) : (
                             data.pending_items_due.map(pi => (
                                 <div key={pi.id} className="alert-card" onClick={() => navigate(`/screening/${pi.screening_case_id}`)} style={{ cursor: 'pointer' }}>
-                                    <div className={`alert-icon pending`}>📋</div>
+                                    <div className={`alert-icon pending`}><Icon name="clipboard" /></div>
                                     <div className="alert-content">
                                         <div className="alert-title">{pi.name}</div>
                                         <div className="alert-meta">
@@ -131,7 +133,7 @@ export default function DashboardPage() {
                             <div className="detail-section-title">Upcoming Visits (Next 7 days)</div>
                             {upcomingVisits.map(v => (
                                 <div key={v.id} className="alert-card" onClick={() => navigate(`/screening/${v.screening_case_id}`)} style={{ cursor: 'pointer' }}>
-                                    <div className="alert-icon" style={{ background: 'var(--accent-muted)', color: 'var(--accent)' }}>📅</div>
+                                    <div className="alert-icon" style={{ background: 'var(--accent-muted)', color: 'var(--accent)' }}><Icon name="calendar" /></div>
                                     <div className="alert-content">
                                         <div className="alert-title">{v.first_name} {v.last_name} — {v.visit_name}</div>
                                         <div className="alert-meta">
@@ -155,7 +157,7 @@ export default function DashboardPage() {
                         ) : (
                             data.revisit_due.map(sc => (
                                 <div key={sc.id} className="alert-card" onClick={() => navigate(`/screening/${sc.id}`)} style={{ cursor: 'pointer' }}>
-                                    <div className="alert-icon revisit">↻</div>
+                                    <div className="alert-icon revisit"><Icon name="refresh" /></div>
                                     <div className="alert-content">
                                         <div className="alert-title">{sc.first_name} {sc.last_name}</div>
                                         <div className="alert-meta">
@@ -183,7 +185,7 @@ export default function DashboardPage() {
                                 return (
                                     <div key={alert.id} className="alert-card" onClick={() => alert.screening_case_id && navigate(`/screening/${alert.screening_case_id}`)} style={{ cursor: alert.screening_case_id ? 'pointer' : 'default' }}>
                                         <div className={`alert-icon ${alert.type === 'THRESHOLD_CROSSED' ? 'threshold' : alert.type === 'REVISIT_DUE' ? 'revisit' : 'pending'}`}>
-                                            {alert.type === 'THRESHOLD_CROSSED' ? '⚡' : alert.type === 'REVISIT_DUE' ? '↻' : alert.type === 'VISIT_REMINDER' ? '📅' : '✓'}
+                                            <Icon name={alert.type === 'THRESHOLD_CROSSED' ? 'bolt' : alert.type === 'REVISIT_DUE' ? 'refresh' : alert.type === 'VISIT_REMINDER' ? 'calendar' : 'check'} />
                                         </div>
                                         <div className="alert-content">
                                             <div className="alert-title">
@@ -195,7 +197,7 @@ export default function DashboardPage() {
                                             <div className="alert-meta">
                                                 {alert.first_name && `${alert.first_name} ${alert.last_name}`}
                                                 {alert.trial_name && ` · ${alert.trial_name}`}
-                                                {' · '}{formatDate(alert.created_at)}
+                                                {' · '}{formatDateTime(alert.created_at)}
                                             </div>
                                         </div>
                                     </div>
@@ -205,6 +207,70 @@ export default function DashboardPage() {
                     </div>
                 </div>
             </div>
+        </div>
+    );
+}
+
+// Stat card — clickable when given onClick (cursor + keyboard activation).
+function StatCard({ label, value, accent, valueColor, onClick }: {
+    label: string;
+    value: number;
+    accent?: boolean;
+    valueColor?: string;
+    onClick?: () => void;
+}) {
+    return (
+        <div
+            className="stat-card animate-in"
+            onClick={onClick}
+            role={onClick ? 'button' : undefined}
+            tabIndex={onClick ? 0 : undefined}
+            onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+            style={onClick ? { cursor: 'pointer' } : undefined}
+        >
+            <div className="stat-label">{label}</div>
+            <div className={`stat-value${accent ? ' accent' : ''}`} style={valueColor ? { color: valueColor } : undefined}>{value}</div>
+        </div>
+    );
+}
+
+// Skeleton placeholder shown while the dashboard loads — mirrors the real layout.
+function DashboardSkeleton() {
+    return (
+        <div>
+            <div className="page-header">
+                <div className="skeleton" style={{ width: 160, height: 30, marginBottom: 10 }} />
+                <div className="skeleton" style={{ width: 320, height: 16 }} />
+            </div>
+            <div className="stats-grid">
+                {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="stat-card">
+                        <div className="skeleton" style={{ width: 80, height: 12, marginBottom: 14 }} />
+                        <div className="skeleton" style={{ width: 48, height: 28 }} />
+                    </div>
+                ))}
+            </div>
+            <div className="detail-grid">
+                <div>{[0, 1].map(s => <SkeletonSection key={s} rows={3} />)}</div>
+                <div>{[0, 1].map(s => <SkeletonSection key={s} rows={2} />)}</div>
+            </div>
+        </div>
+    );
+}
+
+function SkeletonSection({ rows }: { rows: number }) {
+    return (
+        <div className="detail-section">
+            <div className="skeleton" style={{ width: 180, height: 14, marginBottom: 18 }} />
+            {Array.from({ length: rows }).map((_, i) => (
+                <div key={i} className="alert-card" style={{ alignItems: 'center' }}>
+                    <div className="skeleton" style={{ width: 36, height: 36, borderRadius: 6 }} />
+                    <div style={{ flex: 1 }}>
+                        <div className="skeleton" style={{ width: '60%', height: 14, marginBottom: 8 }} />
+                        <div className="skeleton" style={{ width: '40%', height: 11 }} />
+                    </div>
+                </div>
+            ))}
         </div>
     );
 }

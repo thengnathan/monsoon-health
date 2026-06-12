@@ -1,15 +1,22 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { StatusBadge, formatDate, ALL_STATUSES, STATUS_CONFIG } from '../utils';
 import { Select } from '../components/Select';
-import type { ScreeningCaseRow, Trial } from '../types';
+import { Icon } from '../components/Icon';
+import type { ScreeningCaseRow, Trial, StatusKey } from '../types';
 
 export default function ScreeningCasesPage() {
+    const [searchParams] = useSearchParams();
+    // Initialize filters from the URL so dashboard stat cards can deep-link
+    // (e.g. /screening?status=ENROLLED). Ignore an unknown status.
+    const initialStatus = searchParams.get('status') ?? '';
     const [cases, setCases] = useState<ScreeningCaseRow[]>([]);
     const [loading, setLoading] = useState(true);
-    const [statusFilter, setStatusFilter] = useState('');
-    const [trialFilter, setTrialFilter] = useState('');
+    const [statusFilter, setStatusFilter] = useState(
+        ALL_STATUSES.includes(initialStatus as StatusKey) ? initialStatus : ''
+    );
+    const [trialFilter, setTrialFilter] = useState(searchParams.get('trial_id') ?? '');
     const [trials, setTrials] = useState<Trial[]>([]);
     const navigate = useNavigate();
 
@@ -54,7 +61,7 @@ export default function ScreeningCasesPage() {
                 <div className="loading-spinner"><div className="spinner" /></div>
             ) : cases.length === 0 ? (
                 <div className="empty-state">
-                    <div className="empty-state-icon">◎</div>
+                    <div className="empty-state-icon"><Icon name="clipboard" size={40} strokeWidth={1.5} /></div>
                     <h3>No screening cases found</h3>
                     <p>Adjust your filters or create a new case from a patient page.</p>
                 </div>

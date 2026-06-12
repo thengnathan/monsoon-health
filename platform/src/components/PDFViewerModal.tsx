@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Icon } from './Icon';
 
 interface PDFViewerModalProps {
     url: string;         // pre-resolved Supabase signed URL
@@ -44,7 +45,7 @@ export default function PDFViewerModal({ url, filename, onClose }: PDFViewerModa
                     borderBottom: '1px solid var(--border-default)',
                     flexShrink: 0,
                 }}>
-                    <span style={{ fontSize: 16 }}>📄</span>
+                    <span style={{ display: 'inline-flex', color: 'var(--text-secondary)' }}><Icon name="file" size={16} /></span>
                     <span style={{
                         flex: 1,
                         fontWeight: 500,
@@ -61,16 +62,16 @@ export default function PDFViewerModal({ url, filename, onClose }: PDFViewerModa
                             target="_blank"
                             rel="noopener noreferrer"
                             className="btn btn-sm btn-ghost"
-                            style={{ fontSize: 12, padding: '3px 10px' }}
+                            style={{ fontSize: 12, padding: '3px 10px', display: 'inline-flex', alignItems: 'center', gap: 5 }}
                         >
-                            Open in new tab ↗
+                            Open in new tab <Icon name="external-link" size={13} />
                         </a>
                         <button
                             className="modal-close"
                             onClick={onClose}
-                            style={{ marginLeft: 4 }}
+                            style={{ marginLeft: 4, display: 'inline-flex' }}
                         >
-                            ✕
+                            <Icon name="x" size={16} />
                         </button>
                     </div>
                 </div>
@@ -104,7 +105,7 @@ export default function PDFViewerModal({ url, filename, onClose }: PDFViewerModa
                             gap: 12,
                             color: 'var(--text-tertiary)',
                         }}>
-                            <span style={{ fontSize: 32 }}>⚠️</span>
+                            <span style={{ display: 'inline-flex' }}><Icon name="alert" size={32} strokeWidth={1.5} /></span>
                             <div style={{ fontSize: 'var(--font-sm)' }}>Could not load document.</div>
                             <a href={url} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-secondary">
                                 Open in new tab

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import { Icon } from '../components/Icon';
 
 interface Submission {
     id: string;
@@ -160,7 +161,7 @@ export default function IntakeSubmissionsPage() {
                             </div>
                         </div>
                         <button onClick={() => setSelected(null)} className="btn btn-sm btn-ghost"
-                                style={{ fontSize: 18, padding: '2px 8px' }}>×</button>
+                                style={{ padding: '2px 8px' }}><Icon name="x" size={16} /></button>
                     </div>
 
                     {/* Body */}
@@ -232,8 +233,8 @@ export default function IntakeSubmissionsPage() {
                     {selected.status === 'CONVERTED' && (
                         <div style={{ padding: 'var(--space-4) var(--space-6)', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
                             <button className="btn btn-secondary" onClick={() => navigate(`/patients/${selected.patient_id}`)}
-                                    style={{ width: '100%' }}>
-                                View Patient →
+                                    style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                View Patient <Icon name="arrow-right" size={15} />
                             </button>
                         </div>
                     )}
@@ -287,7 +288,7 @@ export default function IntakeSubmissionsPage() {
             ) : submissions.length === 0 ? (
                 <div className="card" style={{ textAlign: 'center', padding: 'var(--space-12) var(--space-6)',
                               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-3)' }}>
-                    <div style={{ fontSize: 36, opacity: 0.35 }}>📋</div>
+                    <div style={{ opacity: 0.35 }}><Icon name="clipboard" size={36} strokeWidth={1.5} /></div>
                     <div style={{ fontSize: 'var(--font-base)', fontWeight: 600, color: 'var(--text-secondary)' }}>
                         No {statusFilter.toLowerCase()} submissions
                     </div>
@@ -325,7 +326,7 @@ export default function IntakeSubmissionsPage() {
                                     </td>
                                     <td>
                                         <span style={{ fontSize: 'var(--font-xs)', color: 'var(--accent)',
-                                                        fontWeight: 600 }}>View →</span>
+                                                        fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>View <Icon name="arrow-right" size={13} /></span>
                                     </td>
                                 </tr>
                             ))}

@@ -4,6 +4,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSiteConfig } from '../contexts/SiteConfigContext';
 import { Select } from '../components/Select';
+import { Icon } from '../components/Icon';
 import type { SpecialtyKey, SpecialtyTemplate, SiteSettingsResponse, SignalType } from '../types';
 
 type Section = 'general' | 'profile' | 'trial_profile' | 'team' | 'preview';
@@ -147,14 +148,14 @@ function GeneralSection({ siteName, siteId }: { siteName: string; siteId: string
                             background: 'var(--bg-root)', border: '1px solid var(--border-default)',
                             borderRadius: 'var(--radius-sm)', padding: '7px 11px',
                         }}>
-                            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', flexShrink: 0 }}>🔗</span>
+                            <span style={{ color: 'var(--text-tertiary)', flexShrink: 0, display: 'inline-flex' }}><Icon name="link" size={14} /></span>
                             <span style={{ flex: 1, fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {intakeUrl}
                             </span>
                         </div>
                     </div>
                     <button className="btn btn-secondary btn-sm" onClick={handleCopy} style={{ alignSelf: 'flex-end', minWidth: 76 }}>
-                        {copied ? '✓ Copied' : 'Copy'}
+                        {copied ? <><Icon name="check" size={14} /> Copied</> : 'Copy'}
                     </button>
                 </div>
             </div>

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { Select } from '../components/Select';
+import { Icon } from '../components/Icon';
 import type { Trial } from '../types';
 
 interface CreateForm {
@@ -63,7 +64,7 @@ export default function TrialsPage() {
 
             {trials.length === 0 ? (
                 <div className="empty-state">
-                    <div className="empty-state-icon">△</div>
+                    <div className="empty-state-icon"><Icon name="diamond" size={40} strokeWidth={1.5} /></div>
                     <h3>No trials found</h3>
                     <p style={{ marginTop: 'var(--space-3)' }}>Create your first trial to get started.</p>
                     <button className="btn btn-primary" style={{ marginTop: 'var(--space-4)' }} onClick={() => setShowCreateModal(true)}>+ New Trial</button>
@@ -108,7 +109,7 @@ export default function TrialsPage() {
                     <div className="modal">
                         <div className="modal-header">
                             <h3 className="modal-title">New Trial</h3>
-                            <button className="modal-close" onClick={() => setShowCreateModal(false)}>✕</button>
+                            <button className="modal-close" onClick={() => setShowCreateModal(false)}><Icon name="x" size={16} /></button>
                         </div>
                         <form onSubmit={handleCreate}>
                             <div className="form-group">

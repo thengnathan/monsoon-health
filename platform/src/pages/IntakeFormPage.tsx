@@ -1,6 +1,7 @@
 import { useState, CSSProperties } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Select } from '../components/Select';
+import { Icon } from '../components/Icon';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -471,7 +472,7 @@ export default function IntakeFormPage() {
                         return;
                     }
                     next();
-                }}>Continue →</button>
+                }}>Continue <Icon name="arrow-right" size={14} style={{ verticalAlign: '-2px' }} /></button>
             </div>
         </>
     );
@@ -553,8 +554,8 @@ export default function IntakeFormPage() {
                     onChange={v => setHistory('family_history', v)} />
             </div>
             <div style={s.navButtons}>
-                <button style={s.btnBack} onClick={back}>← Back</button>
-                <button style={s.btnNext} onClick={next}>Continue →</button>
+                <button style={s.btnBack} onClick={back}><Icon name="arrow-left" size={14} style={{ verticalAlign: '-2px' }} /> Back</button>
+                <button style={s.btnNext} onClick={next}>Continue <Icon name="arrow-right" size={14} style={{ verticalAlign: '-2px' }} /></button>
             </div>
         </>
     );
@@ -669,8 +670,8 @@ export default function IntakeFormPage() {
                 </div>
             </div>
             <div style={s.navButtons}>
-                <button style={s.btnBack} onClick={back}>← Back</button>
-                <button style={s.btnNext} onClick={next}>Continue →</button>
+                <button style={s.btnBack} onClick={back}><Icon name="arrow-left" size={14} style={{ verticalAlign: '-2px' }} /> Back</button>
+                <button style={s.btnNext} onClick={next}>Continue <Icon name="arrow-right" size={14} style={{ verticalAlign: '-2px' }} /></button>
             </div>
         </>
     );
@@ -753,7 +754,7 @@ export default function IntakeFormPage() {
                                     const updated = form.medications.other_meds.filter((_, j) => j !== i);
                                     setMeds('other_meds', updated);
                                 }} style={{ position: 'absolute', top: 8, right: 8, background: 'none',
-                                            border: 'none', color: C.muted, cursor: 'pointer', fontSize: 16 }}>×</button>
+                                            border: 'none', color: C.muted, cursor: 'pointer', display: 'inline-flex' }}><Icon name="x" size={16} /></button>
                             )}
                             <div style={s.row}>
                                 <div>
@@ -806,8 +807,8 @@ export default function IntakeFormPage() {
                 </div>
             </div>
             <div style={s.navButtons}>
-                <button style={s.btnBack} onClick={back}>← Back</button>
-                <button style={s.btnNext} onClick={next}>Continue →</button>
+                <button style={s.btnBack} onClick={back}><Icon name="arrow-left" size={14} style={{ verticalAlign: '-2px' }} /> Back</button>
+                <button style={s.btnNext} onClick={next}>Continue <Icon name="arrow-right" size={14} style={{ verticalAlign: '-2px' }} /></button>
             </div>
         </>
     );
@@ -949,8 +950,8 @@ export default function IntakeFormPage() {
                 </div>
             </div>
             <div style={s.navButtons}>
-                <button style={s.btnBack} onClick={back}>← Back</button>
-                <button style={s.btnNext} onClick={next}>Continue →</button>
+                <button style={s.btnBack} onClick={back}><Icon name="arrow-left" size={14} style={{ verticalAlign: '-2px' }} /> Back</button>
+                <button style={s.btnNext} onClick={next}>Continue <Icon name="arrow-right" size={14} style={{ verticalAlign: '-2px' }} /></button>
             </div>
         </>
     );
@@ -1022,15 +1023,15 @@ export default function IntakeFormPage() {
             </div>
 
             <div style={s.navButtons}>
-                <button style={s.btnBack} onClick={back}>← Back</button>
+                <button style={s.btnBack} onClick={back}><Icon name="arrow-left" size={14} style={{ verticalAlign: '-2px' }} /> Back</button>
                 <button style={{ ...s.btnSubmit, opacity: submitting ? 0.7 : 1 }}
                         onClick={handleSubmit} disabled={submitting}>
-                    {submitting ? 'Submitting…' : 'Submit Form ✓'}
+                    {submitting ? 'Submitting…' : <>Submit Form <Icon name="check" size={14} style={{ verticalAlign: '-2px' }} /></>}
                 </button>
             </div>
 
             <div style={s.privacyNote}>
-                🔒 Your information is encrypted and HIPAA-protected
+                <Icon name="lock" size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} /> Your information is encrypted and HIPAA-protected
             </div>
         </>
     );
@@ -1064,7 +1065,7 @@ export default function IntakeFormPage() {
                                 If you have any questions before your appointment, please contact our research team. You can close this window.
                             </p>
                             <div style={{ ...s.privacyNote, marginTop: 20 }}>
-                                🔒 Secured by Monsoon Health · HIPAA Compliant
+                                <Icon name="lock" size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} /> Secured by Monsoon Health · HIPAA Compliant
                             </div>
                         </div>
                     </div>

@@ -8,6 +8,7 @@ import { StatusBadge, formatDate } from '../utils';
 import type { TrialDetail, SignalType, VisitTemplate } from '../types';
 import ProtocolViewer from '../components/ProtocolViewer';
 import PDFViewerModal from '../components/PDFViewerModal';
+import { Icon } from '../components/Icon';
 import ProtocolLoadingAnimation from '../components/ProtocolLoadingAnimation';
 import { Select } from '../components/Select';
 
@@ -233,9 +234,9 @@ function RichTextEditor({ value, onChange }: { value: string; onChange: (v: stri
 
                 {divider}
 
-                <button type="button" style={{ ...btnStyle, fontSize: 11, color: 'var(--text-tertiary)' }} title="Remove formatting"
+                <button type="button" style={{ ...btnStyle, fontSize: 11, color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', gap: 1 }} title="Remove formatting"
                     onMouseDown={e => { e.preventDefault(); exec('removeFormat'); }}>
-                    T✕
+                    T<Icon name="x" size={11} />
                 </button>
             </div>
 
@@ -320,10 +321,10 @@ function SignalRuleCard({ label, threshold, isMatch, citationText, isAI, onEdit,
                 </button>
                 <button
                     onClick={onDelete}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: '2px 4px', fontSize: 13, lineHeight: 1, flexShrink: 0 }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: '2px 4px', lineHeight: 1, flexShrink: 0, display: 'inline-flex' }}
                     title="Delete rule"
                 >
-                    ✕
+                    <Icon name="x" size={14} />
                 </button>
             </div>
 
@@ -711,7 +712,7 @@ export default function TrialDetailPage() {
                         {trial.protocol ? (
                             <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-4)' }}>
-                                    <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-sm)', background: 'var(--accent-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>📄</div>
+                                    <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-sm)', background: 'var(--accent-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)', flexShrink: 0 }}><Icon name="file" size={16} /></div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <div style={{ fontWeight: 500, fontSize: 'var(--font-base)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={trial.protocol.filename}>
                                             {trial.protocol.filename.length > 25 ? trial.protocol.filename.slice(0, 25) + '…' : trial.protocol.filename}
@@ -741,7 +742,7 @@ export default function TrialDetailPage() {
                             </div>
                         ) : (
                             <div className="card" style={{ textAlign: 'center', padding: 'var(--space-6)' }}>
-                                <div style={{ fontSize: 32, marginBottom: 'var(--space-3)', opacity: 0.4 }}>📄</div>
+                                <div style={{ marginBottom: 'var(--space-3)', opacity: 0.4, display: 'flex', justifyContent: 'center' }}><Icon name="file" size={32} strokeWidth={1.5} /></div>
                                 <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-tertiary)', marginBottom: 'var(--space-4)' }}>No protocol uploaded</p>
                                 <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>Upload Protocol PDF</button>
                             </div>
@@ -831,8 +832,8 @@ export default function TrialDetailPage() {
                                 </div>
                                 {activeCases.length === 0 ? (
                                     <div className="card" style={{ textAlign: 'center', padding: 'var(--space-8) var(--space-6)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-3)' }}>
-                                        <div style={{ fontSize: 32, opacity: 0.35, marginBottom: 'var(--space-1)' }}>
-                                            {caseTab === 'potential' ? '🔍' : caseTab === 'screening' ? '📋' : '✓'}
+                                        <div style={{ opacity: 0.35, marginBottom: 'var(--space-1)', display: 'flex', justifyContent: 'center' }}>
+                                            <Icon name={caseTab === 'potential' ? 'search' : caseTab === 'screening' ? 'clipboard' : 'check'} size={32} strokeWidth={1.5} />
                                         </div>
                                         <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-tertiary)', margin: 0, maxWidth: 240 }}>
                                             {caseTab === 'potential' && 'No future candidates for this trial yet.'}
@@ -1044,7 +1045,7 @@ export default function TrialDetailPage() {
                     <div className="modal">
                         <div className="modal-header">
                             <h3 className="modal-title">Add Visit</h3>
-                            <button className="modal-close" onClick={() => setShowVisitModal(false)}>✕</button>
+                            <button className="modal-close" onClick={() => setShowVisitModal(false)}><Icon name="x" size={16} /></button>
                         </div>
                         <form onSubmit={handleAddVisit}>
                             <div className="form-group">
@@ -1096,7 +1097,7 @@ export default function TrialDetailPage() {
                                     Day {selectedVisit.day_offset} · Window −{selectedVisit.window_before}/+{selectedVisit.window_after}d · Reminder {selectedVisit.reminder_days_before}d before
                                 </div>
                             </div>
-                            <button className="modal-close" onClick={() => setSelectedVisit(null)}>✕</button>
+                            <button className="modal-close" onClick={() => setSelectedVisit(null)}><Icon name="x" size={16} /></button>
                         </div>
                         <div style={{ padding: 'var(--space-4)' }}>
                             <label className="form-label" style={{ display: 'block', marginBottom: 'var(--space-2)' }}>Assessments</label>
@@ -1141,7 +1142,7 @@ export default function TrialDetailPage() {
                     <div className="modal">
                         <div className="modal-header">
                             <h3 className="modal-title">Edit Rule — {editingRule.signal_label}</h3>
-                            <button className="modal-close" onClick={() => setEditingRule(null)}>✕</button>
+                            <button className="modal-close" onClick={() => setEditingRule(null)}><Icon name="x" size={16} /></button>
                         </div>
                         <form onSubmit={handleUpdateSignal}>
                             <div className="form-group">
@@ -1203,7 +1204,7 @@ export default function TrialDetailPage() {
                     <div className="modal">
                         <div className="modal-header">
                             <h3 className="modal-title">Add Signal Rule</h3>
-                            <button className="modal-close" onClick={() => { setShowSignalModal(false); setSignalForm(emptySignalForm); }}>✕</button>
+                            <button className="modal-close" onClick={() => { setShowSignalModal(false); setSignalForm(emptySignalForm); }}><Icon name="x" size={16} /></button>
                         </div>
                         {/* Mode toggle */}
                         <div style={{ display: 'flex', gap: 0, margin: '0 0 var(--space-5)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>

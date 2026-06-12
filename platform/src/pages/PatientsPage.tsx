@@ -5,6 +5,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDate } from '../utils';
 import { Select } from '../components/Select';
+import { Icon } from '../components/Icon';
 import type { Patient, ReferralSource, UploadResult, BatchImportResult, PatientClinicalData, PatientSpecialty } from '../types';
 
 const SPECIALTY_COLORS: Record<PatientSpecialty, { color: string; bg: string; label: string }> = {
@@ -219,7 +220,7 @@ export default function PatientsPage() {
                 <div className="loading-spinner"><div className="spinner" /></div>
             ) : patients.length === 0 ? (
                 <div className="empty-state">
-                    <div className="empty-state-icon">◇</div>
+                    <div className="empty-state-icon"><Icon name="diamond" size={40} strokeWidth={1.5} /></div>
                     <h3>{search ? 'No patients found' : 'No patients yet'}</h3>
                     <p style={{ marginTop: 'var(--space-3)' }}>
                         {search ? 'Try a different search term' : 'Upload a document (e.g. FibroScan report) to auto-create a patient, or add one manually.'}
@@ -318,7 +319,7 @@ export default function PatientsPage() {
                                         <td className="meta">
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                                 {formatDate(p.created_at)}
-                                                <span style={{ color: 'var(--text-tertiary)', fontSize: 10, marginLeft: 8 }}>{isExpanded ? '▲' : '▼'}</span>
+                                                <span style={{ color: 'var(--text-tertiary)', marginLeft: 8, display: 'inline-flex' }}><Icon name={isExpanded ? 'chevron-up' : 'chevron-down'} size={12} /></span>
                                             </div>
                                         </td>
                                     </tr>,
@@ -393,7 +394,7 @@ export default function PatientsPage() {
                                                             paddingLeft: 'var(--space-4)', flexShrink: 0,
                                                         }}>
                                                             <button className="btn btn-sm btn-primary" onClick={e => { e.stopPropagation(); navigate(`/patients/${p.id}`); }}>
-                                                                View Full Profile →
+                                                                View Full Profile <Icon name="arrow-right" size={14} />
                                                             </button>
                                                         </div>
                                                     </div>
@@ -415,7 +416,7 @@ export default function PatientsPage() {
                     <div className="modal">
                         <div className="modal-header">
                             <h3 className="modal-title">Upload Document</h3>
-                            <button className="modal-close" onClick={() => setShowUploadTypeModal(false)}>✕</button>
+                            <button className="modal-close" onClick={() => setShowUploadTypeModal(false)}><Icon name="x" size={16} /></button>
                         </div>
                         <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-4)' }}>
                             What type of file are you uploading?
@@ -428,7 +429,7 @@ export default function PatientsPage() {
                                 onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
                                 onMouseLeave={e => (e.currentTarget.style.borderColor = 'transparent')}
                             >
-                                <div style={{ fontSize: 28, marginBottom: 'var(--space-3)' }}>📄</div>
+                                <div style={{ marginBottom: 'var(--space-3)', color: 'var(--accent)' }}><Icon name="file" size={28} strokeWidth={1.5} /></div>
                                 <div style={{ fontWeight: 600, fontSize: 'var(--font-md)', marginBottom: 'var(--space-2)' }}>Individual Patient File</div>
                                 <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-secondary)' }}>PDF, JPG, or PNG — one patient's document (e.g. FibroScan report)</div>
                             </button>
@@ -439,7 +440,7 @@ export default function PatientsPage() {
                                 onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
                                 onMouseLeave={e => (e.currentTarget.style.borderColor = 'transparent')}
                             >
-                                <div style={{ fontSize: 28, marginBottom: 'var(--space-3)' }}>📊</div>
+                                <div style={{ marginBottom: 'var(--space-3)', color: 'var(--accent)' }}><Icon name="chart" size={28} strokeWidth={1.5} /></div>
                                 <div style={{ fontWeight: 600, fontSize: 'var(--font-md)', marginBottom: 'var(--space-2)' }}>Batch Import</div>
                                 <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-secondary)' }}>Excel or CSV — multiple patients at once</div>
                             </button>
@@ -457,7 +458,7 @@ export default function PatientsPage() {
                     <div className="modal">
                         <div className="modal-header">
                             <h3 className="modal-title">Batch Import Complete</h3>
-                            <button className="modal-close" onClick={() => setShowBatchResult(null)}>✕</button>
+                            <button className="modal-close" onClick={() => setShowBatchResult(null)}><Icon name="x" size={16} /></button>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)' }}>
@@ -525,10 +526,11 @@ export default function PatientsPage() {
                 <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowUploadResult(null)}>
                     <div className="modal">
                         <div className="modal-header">
-                            <h3 className="modal-title">
-                                {showUploadResult.patient_created ? '✅ Patient Created from Document' : '✅ Document Uploaded'}
+                            <h3 className="modal-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                <Icon name="check-circle" size={18} style={{ color: 'var(--success)' }} />
+                                {showUploadResult.patient_created ? 'Patient Created from Document' : 'Document Uploaded'}
                             </h3>
-                            <button className="modal-close" onClick={() => setShowUploadResult(null)}>✕</button>
+                            <button className="modal-close" onClick={() => setShowUploadResult(null)}><Icon name="x" size={16} /></button>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                             <div className="card" style={{ padding: 'var(--space-4)' }}>
@@ -562,8 +564,8 @@ export default function PatientsPage() {
                             )}
 
                             {showUploadResult.signals_created.length > 0 && (
-                                <p style={{ fontSize: 'var(--font-xs)', color: 'var(--accent)' }}>
-                                    ✓ Signal values recorded: {showUploadResult.signals_created.join(', ')}
+                                <p style={{ fontSize: 'var(--font-xs)', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                    <Icon name="check" size={13} /> Signal values recorded: {showUploadResult.signals_created.join(', ')}
                                 </p>
                             )}
 
@@ -576,7 +578,7 @@ export default function PatientsPage() {
                         <div className="modal-actions">
                             <button className="btn btn-secondary" onClick={() => setShowUploadResult(null)}>Close</button>
                             <button className="btn btn-primary" onClick={() => { setShowUploadResult(null); navigate(`/patients/${showUploadResult.patient.id}`); }}>
-                                View Patient →
+                                View Patient <Icon name="arrow-right" size={14} />
                             </button>
                         </div>
                     </div>
@@ -589,7 +591,7 @@ export default function PatientsPage() {
                     <div className="modal" style={{ maxWidth: 420 }}>
                         <div className="modal-header">
                             <h3 className="modal-title">Delete {selectedIds.size} Patient{selectedIds.size !== 1 ? 's' : ''}?</h3>
-                            <button className="modal-close" onClick={() => setShowDeleteConfirm(false)} disabled={deleting}>✕</button>
+                            <button className="modal-close" onClick={() => setShowDeleteConfirm(false)} disabled={deleting}><Icon name="x" size={16} /></button>
                         </div>
                         <div style={{ padding: 'var(--space-2) 0 var(--space-4)' }}>
                             <p style={{ fontSize: 'var(--font-base)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
@@ -617,7 +619,7 @@ export default function PatientsPage() {
                     <div className="modal">
                         <div className="modal-header">
                             <h3 className="modal-title">Add Patient</h3>
-                            <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
+                            <button className="modal-close" onClick={() => setShowModal(false)}><Icon name="x" size={16} /></button>
                         </div>
                         <form onSubmit={handleCreate}>
                             <div className="form-row">

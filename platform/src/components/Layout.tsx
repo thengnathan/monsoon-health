@@ -4,19 +4,20 @@ import { useUser, UserButton } from '@clerk/clerk-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { NotePopup } from '../pages/NotesPage';
+import { NavIcon } from './NavIcons';
 import { api } from '../api';
 import type { Note } from '../types';
 
 interface NavItem { to: string; label: string; icon: string; end?: boolean; }
 
 const navItems: NavItem[] = [
-    { to: '/', label: 'Today', icon: '◉', end: true },
-    { to: '/screening', label: 'Screening Cases', icon: '◎' },
-    { to: '/patients', label: 'Patients', icon: '◇' },
-    { to: '/trials', label: 'Trials', icon: '△' },
-    { to: '/intake-submissions', label: 'Intake Forms', icon: '◫' },
-    { to: '/notes', label: 'Notes', icon: '☰' },
-    { to: '/settings', label: 'Settings', icon: '⚙' },
+    { to: '/', label: 'Today', icon: 'today', end: true },
+    { to: '/screening', label: 'Screening Cases', icon: 'screening' },
+    { to: '/patients', label: 'Patients', icon: 'patients' },
+    { to: '/trials', label: 'Trials', icon: 'trials' },
+    { to: '/intake-submissions', label: 'Intake Forms', icon: 'intake' },
+    { to: '/notes', label: 'Notes', icon: 'notes' },
+    { to: '/settings', label: 'Settings', icon: 'settings' },
 ];
 
 export type LayoutOutletContext = {
@@ -81,7 +82,7 @@ export default function Layout() {
                             end={item.end}
                             className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
                         >
-                            <span style={{ fontSize: '16px', width: 18, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
+                            <span style={{ width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><NavIcon name={item.icon} /></span>
                             <span className="sidebar-link-label">{item.label}</span>
                         </NavLink>
                     ))}

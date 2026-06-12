@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../api';
+import { Icon } from '../components/Icon';
 import type { Note } from '../types';
 import type { LayoutOutletContext } from '../components/Layout';
 
@@ -236,7 +237,7 @@ export default function NotesPage() {
 
             {notes.length === 0 ? (
                 <div className="empty-state">
-                    <div className="empty-state-icon">☰</div>
+                    <div className="empty-state-icon"><Icon name="menu" size={40} strokeWidth={1.5} /></div>
                     <h3>No notes yet</h3>
                     <p>Create your first note to get started.</p>
                     <button className="btn btn-primary" onClick={() => openNote(null)} style={{ marginTop: 'var(--space-4)' }}>

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Select } from './Select';
+import { Icon } from './Icon';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -328,7 +329,7 @@ function FootnotesCollapsible({ footnotes }: { footnotes: SoaFootnote[] }) {
                 }}
             >
                 SoA Footnotes ({footnotes.length})
-                <span>{open ? '▲' : '▼'}</span>
+                <span style={{ display: 'inline-flex' }}><Icon name={open ? 'chevron-up' : 'chevron-down'} size={14} /></span>
             </button>
             {open && (
                 <div style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -369,7 +370,7 @@ function CriteriaTab({ data, animating }: { data: StructuredData; animating?: bo
                         <span style={{ fontWeight: 600, fontSize: 'var(--font-base)', color: 'var(--success)' }}>Inclusion Criteria</span>
                         <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', background: 'var(--border)', borderRadius: 4, padding: '1px 6px' }}>{inclusionCount}</span>
                     </div>
-                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{inclusionOpen ? '▲' : '▼'}</span>
+                    <span style={{ color: 'var(--text-tertiary)', display: 'inline-flex' }}><Icon name={inclusionOpen ? 'chevron-up' : 'chevron-down'} size={12} /></span>
                 </button>
                 {inclusionOpen && (
                     <div style={{ padding: 'var(--space-4)' }}>
@@ -392,7 +393,7 @@ function CriteriaTab({ data, animating }: { data: StructuredData; animating?: bo
                         <span style={{ fontWeight: 600, fontSize: 'var(--font-base)', color: 'var(--error)' }}>Exclusion Criteria</span>
                         <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', background: 'var(--border)', borderRadius: 4, padding: '1px 6px' }}>{exclusionCount}</span>
                     </div>
-                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{exclusionOpen ? '▲' : '▼'}</span>
+                    <span style={{ color: 'var(--text-tertiary)', display: 'inline-flex' }}><Icon name={exclusionOpen ? 'chevron-up' : 'chevron-down'} size={12} /></span>
                 </button>
                 {exclusionOpen && (
                     <div style={{ padding: 'var(--space-4)' }}>

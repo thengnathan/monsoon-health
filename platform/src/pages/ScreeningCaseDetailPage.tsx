@@ -4,6 +4,7 @@ import { api } from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { StatusBadge, formatDate, ALL_STATUSES, STATUS_CONFIG, isOverdue } from '../utils';
 import { Select } from '../components/Select';
+import { Icon } from '../components/Icon';
 import type { ScreeningCaseDetail, PatientVisit, PendingItem, ScreenFailReason } from '../types';
 
 interface StatusForm { status: string; next_action_date: string; }
@@ -117,7 +118,7 @@ export default function ScreeningCaseDetailPage() {
     const openItems = sc.pending_items?.filter(i => i.status === 'OPEN') || [];
     const completedItems = sc.pending_items?.filter(i => i.status === 'COMPLETED') || [];
 
-    const visitStatusIcons: Record<string, string> = { SCHEDULED: '○', COMPLETED: '●', MISSED: '✕', CANCELLED: '—' };
+    const visitStatusIcons: Record<string, string> = { SCHEDULED: 'circle', COMPLETED: 'check-circle', MISSED: 'x-circle', CANCELLED: 'minus' };
     const visitStatusColors: Record<string, string> = { SCHEDULED: 'var(--accent)', COMPLETED: 'var(--success)', MISSED: 'var(--error)', CANCELLED: 'var(--text-tertiary)' };
 
     return (
@@ -161,8 +162,8 @@ export default function ScreeningCaseDetailPage() {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                                 {visits.map(v => (
                                     <div key={v.id} className="card" style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                                        <div style={{ fontSize: 18, color: visitStatusColors[v.status], width: 24, textAlign: 'center', flexShrink: 0 }}>
-                                            {visitStatusIcons[v.status]}
+                                        <div style={{ color: visitStatusColors[v.status], width: 24, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+                                            <Icon name={visitStatusIcons[v.status]} size={18} />
                                         </div>
                                         <div style={{ flex: 1 }}>
                                             <div style={{ fontWeight: 500, fontSize: 'var(--font-sm)' }}>{v.visit_name}</div>
@@ -176,8 +177,8 @@ export default function ScreeningCaseDetailPage() {
                                         </div>
                                         {v.status === 'SCHEDULED' && (
                                             <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                                                <button className="btn btn-sm btn-secondary" onClick={() => handleVisitStatusChange(v.id, 'COMPLETED')} title="Mark completed">✓</button>
-                                                <button className="btn btn-sm btn-ghost" onClick={() => handleVisitStatusChange(v.id, 'MISSED')} title="Mark missed" style={{ color: 'var(--error)' }}>✕</button>
+                                                <button className="btn btn-sm btn-secondary" onClick={() => handleVisitStatusChange(v.id, 'COMPLETED')} title="Mark completed"><Icon name="check" size={16} /></button>
+                                                <button className="btn btn-sm btn-ghost" onClick={() => handleVisitStatusChange(v.id, 'MISSED')} title="Mark missed" style={{ color: 'var(--error)' }}><Icon name="x" size={16} /></button>
                                             </div>
                                         )}
                                         {v.status !== 'SCHEDULED' && (
@@ -195,8 +196,9 @@ export default function ScreeningCaseDetailPage() {
                     {(sc.status === 'SCREEN_FAILED' || sc.status === 'FUTURE_CANDIDATE') && (
                         <div className="card animate-in" style={{ marginBottom: 'var(--space-6)', borderColor: sc.status === 'FUTURE_CANDIDATE' ? 'rgba(167,139,250,0.2)' : 'rgba(239,108,108,0.2)' }}>
                             <div className="card-header">
-                                <div className="card-title" style={{ color: sc.status === 'FUTURE_CANDIDATE' ? 'var(--status-future)' : 'var(--status-failed)' }}>
-                                    {sc.status === 'FUTURE_CANDIDATE' ? '↻ Future Candidate' : '✕ Screen Fail Documentation'}
+                                <div className="card-title" style={{ color: sc.status === 'FUTURE_CANDIDATE' ? 'var(--status-future)' : 'var(--status-failed)', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                                    <Icon name={sc.status === 'FUTURE_CANDIDATE' ? 'refresh' : 'x'} size={16} />
+                                    {sc.status === 'FUTURE_CANDIDATE' ? 'Future Candidate' : 'Screen Fail Documentation'}
                                 </div>
                             </div>
                             {sc.fail_reason_label && (
@@ -310,7 +312,7 @@ export default function ScreeningCaseDetailPage() {
                             <div className="signal-timeline">
                                 {sc.signals.map(sig => (
                                     <div key={sig.id} className="signal-item">
-                                        <div className="signal-dot">📊</div>
+                                        <div className="signal-dot"><Icon name="chart" size={14} /></div>
                                         <div className="signal-info">
                                             <div className="signal-label">{sig.signal_label}</div>
                                             <div className="signal-value">
@@ -357,7 +359,7 @@ export default function ScreeningCaseDetailPage() {
                     <div className="modal">
                         <div className="modal-header">
                             <h3 className="modal-title">Update Status</h3>
-                            <button className="modal-close" onClick={() => setShowStatusModal(false)}>✕</button>
+                            <button className="modal-close" onClick={() => setShowStatusModal(false)}><Icon name="x" size={16} /></button>
                         </div>
                         <form onSubmit={handleStatusUpdate}>
                             <div className="form-group">
@@ -387,7 +389,7 @@ export default function ScreeningCaseDetailPage() {
                     <div className="modal">
                         <div className="modal-header">
                             <h3 className="modal-title">Document Screen Fail</h3>
-                            <button className="modal-close" onClick={() => setShowFailModal(false)}>✕</button>
+                            <button className="modal-close" onClick={() => setShowFailModal(false)}><Icon name="x" size={16} /></button>
                         </div>
                         <form onSubmit={handleScreenFail}>
                             <div className="form-group">
@@ -428,7 +430,7 @@ export default function ScreeningCaseDetailPage() {
                     <div className="modal">
                         <div className="modal-header">
                             <h3 className="modal-title">Enroll Patient</h3>
-                            <button className="modal-close" onClick={() => setShowEnrollModal(false)}>✕</button>
+                            <button className="modal-close" onClick={() => setShowEnrollModal(false)}><Icon name="x" size={16} /></button>
                         </div>
                         <form onSubmit={handleEnroll}>
                             <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-4)' }}>
@@ -453,7 +455,7 @@ export default function ScreeningCaseDetailPage() {
                     <div className="modal">
                         <div className="modal-header">
                             <h3 className="modal-title">Add Pending Item</h3>
-                            <button className="modal-close" onClick={() => setShowPendingModal(false)}>✕</button>
+                            <button className="modal-close" onClick={() => setShowPendingModal(false)}><Icon name="x" size={16} /></button>
                         </div>
                         <form onSubmit={handleAddPending}>
                             <div className="form-row">

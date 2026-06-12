@@ -532,6 +532,21 @@ button {
   cursor: pointer;
   text-decoration: none;
   margin-bottom: 2px;
+  position: relative;
+}
+
+/* Accent bar that grows in vertically when a link becomes active */
+.sidebar-link::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 0;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+  transform: translateY(-50%);
+  transition: height var(--transition-base) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .sidebar-link:hover {
@@ -544,11 +559,22 @@ button {
   color: var(--accent);
 }
 
+.sidebar-link.active::before {
+  height: 60%;
+}
+
 .sidebar-link svg {
   width: 18px;
   height: 18px;
   opacity: 0.7;
   flex-shrink: 0;
+  transition: transform var(--transition-base) cubic-bezier(0.16, 1, 0.3, 1), opacity var(--transition-fast);
+}
+
+/* Icon nudges toward the label on hover */
+.sidebar-link:hover svg {
+  transform: translateX(2px);
+  opacity: 1;
 }
 
 .sidebar-link.active svg {
@@ -610,11 +636,13 @@ button {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
-  transition: border-color var(--transition-base);
+  transition: all var(--transition-base) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .card:hover {
   border-color: var(--border-default);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
 }
 
 .card-header {
@@ -653,7 +681,8 @@ button {
 
 .stat-card:hover {
   border-color: var(--border-default);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
 }
 
 .stat-label {
@@ -790,6 +819,17 @@ button {
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Tactile lift on hover, press-down on click — applies to all variants */
+.btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+  transition-duration: 60ms;
 }
 
 .btn-primary {
@@ -979,6 +1019,7 @@ button {
 
 .data-table tbody tr:hover {
   background: var(--bg-surface-hover);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .data-table tbody tr {
@@ -1103,7 +1144,8 @@ button {
 
 .alert-card:hover {
   border-color: var(--border-default);
-  transform: translateX(2px);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .alert-icon {
@@ -1435,6 +1477,7 @@ button {
 
 .tab:hover {
   color: var(--text-primary);
+  border-bottom-color: var(--border-strong);
 }
 
 .tab.active {
@@ -1465,6 +1508,11 @@ button {
 .filter-pill:hover {
   border-color: var(--border-strong);
   color: var(--text-primary);
+  transform: translateY(-2px);
+}
+.filter-pill:active {
+  transform: translateY(0);
+  transition-duration: 60ms;
 }
 
 .filter-pill.active {
@@ -1603,9 +1651,9 @@ button {
 .skeleton {
   background: linear-gradient(
     90deg,
-    var(--bg-secondary) 25%,
-    var(--border) 50%,
-    var(--bg-secondary) 75%
+    var(--bg-surface) 25%,
+    var(--bg-surface-hover) 50%,
+    var(--bg-surface) 75%
   );
   background-size: 800px 100%;
   animation: skeleton-shimmer 1.4s ease-in-out infinite;
@@ -1716,8 +1764,8 @@ button {
 }
 
 .note-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
   border-color: var(--accent);
 }
 
@@ -1945,5 +1993,22 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .criterion-reveal, .visit-slide-in, .rule-fade-in {
     animation: none;
+  }
+  /* Suppress hover/press transforms for motion-sensitive users — keep color/
+     background/shadow feedback, drop the movement */
+  .btn:hover:not(:disabled),
+  .btn:active:not(:disabled),
+  .filter-pill:hover,
+  .filter-pill:active,
+  .card:hover,
+  .stat-card:hover,
+  .alert-card:hover,
+  .note-card:hover,
+  .sidebar-link:hover svg {
+    transform: none;
+  }
+  .sidebar-link::before,
+  .sidebar-link svg {
+    transition: none;
   }
 }
