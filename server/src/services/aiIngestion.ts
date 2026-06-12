@@ -1,4 +1,4 @@
-import { claudeChat, claudeExtract, claudeExtractFromPDF } from './claude';
+import { claudeChat, claudeExtract, claudeExtractFromPDF, claudeExtractWithTool } from './claude';
 import type { StructuredProtocol, StructuredPatientDocument } from '../types/clinicalSchemas';
 
 // ── Text cleaning (used for patient documents only) ───────────────────────────
@@ -191,51 +191,77 @@ interface SoaRowResult {
     soa_footnotes: import('../types/clinicalSchemas').SoaFootnote[];
 }
 
-const SOA_PROMPT = `You are extracting the Schedule of Assessments (SoA) from a clinical trial protocol PDF. This is a critical task — CRCs rely on this data to know exactly what must be done at every visit.
+// SoA extraction uses tool use — Claude must populate the tool parameters exactly.
+// No free-text JSON means no parse failures and no silently dropped fields.
+const SOA_TOOL = {
+    name: 'extract_soa',
+    description: 'Extract every row from the Schedule of Assessments table(s) in this clinical trial protocol, row by row.',
+    input_schema: {
+        type: 'object',
+        required: ['assessment_rows', 'soa_footnotes'],
+        properties: {
+            assessment_rows: {
+                type: 'array',
+                description: 'One entry per assessment row across ALL SoA tables in the document. Do not skip any rows.',
+                items: {
+                    type: 'object',
+                    required: ['assessment', 'category', 'visits_marked', 'footnote_keys'],
+                    properties: {
+                        assessment: {
+                            type: 'string',
+                            description: 'Exact row label as written in the table (e.g. "Vital Signs", "Adverse Event Assessment")',
+                        },
+                        category: {
+                            type: 'string',
+                            description: 'Nearest preceding section header in the SoA (e.g. "Laboratory Assessments", "Safety"). Use "Assessments" if no header exists.',
+                        },
+                        visits_marked: {
+                            type: 'array',
+                            description: 'Visit names from the canonical list where this row is marked (X, ✓, bullet, footnote letter, or any symbol). Use ONLY names from the provided canonical list.',
+                            items: { type: 'string' },
+                        },
+                        footnote_keys: {
+                            type: 'array',
+                            description: 'Superscript footnote keys attached to this row label (e.g. ["a"] or ["b","c"]). Empty array if none.',
+                            items: { type: 'string' },
+                        },
+                    },
+                },
+            },
+            soa_footnotes: {
+                type: 'array',
+                description: 'All footnote definitions from below the SoA table(s). Include full verbatim text.',
+                items: {
+                    type: 'object',
+                    required: ['key', 'text'],
+                    properties: {
+                        key: { type: 'string' },
+                        text: { type: 'string' },
+                    },
+                },
+            },
+        },
+    },
+};
+
+const SOA_PROMPT_INSTRUCTIONS = `You are extracting the Schedule of Assessments (SoA) from a clinical trial protocol PDF. This is a critical task — CRCs rely on this data to know exactly what must be done at every visit. Use the extract_soa tool to return your results.
 
 STEP 1 — SCAN FIRST: Read through the ENTIRE document and identify every SoA / Schedule of Activities table. Many protocols have multiple tables (one per cohort, arm, or study part). Note which pages each table spans.
 
 STEP 2 — EXTRACT ROW BY ROW (critical): For each table, go row by row through every assessment row. For each row, record the exact row label, its category, and the list of visit columns where the cell is marked (X, ✓, •, a footnote letter, Y, "x", a filled circle, or any symbol indicating the assessment is required). An empty cell means the assessment does NOT occur at that visit.
 
-WHY ROW-FIRST MATTERS: SoA tables often span multiple pages. Column headers (visit names) appear only on the first page of the table, but assessment rows continue onto subsequent pages. If you walked column-by-column you would lose track of rows on continuation pages. By walking row-by-row, each row stays intact regardless of which page it appears on — you only need to remember the column positions from the header page and apply them consistently to every continuation row. The canonical visit-name list is provided below; use it as the authoritative set of column anchors.
-
-Return this exact JSON:
-{
-  "assessment_rows": [
-    {
-      "assessment": string,          // exact row label as written in the table
-      "category": string,            // nearest preceding section header (e.g. "Laboratory Assessments")
-      "visits_marked": [string],     // visit names from the provided list where this row is marked
-      "footnote_keys": [string]      // superscript footnotes attached to the row label (e.g. ["a"], ["b","c"])
-    }
-  ],
-  "soa_footnotes": [
-    { "key": string, "text": string }
-  ]
-}
+WHY ROW-FIRST MATTERS: SoA tables often span multiple pages. Column headers (visit names) appear only on the first page of the table, but assessment rows continue onto subsequent pages. By walking row-by-row, each row stays intact regardless of which page it appears on — you only need to remember the column positions from the header page and apply them consistently to every continuation row.
 
 Rules for assessment_rows — completeness is critical:
 - Include EVERY row in every SoA table — do not skip routine, obvious, or repetitive items
-- Safety/administrative items ("Adverse Event Assessment", "Concomitant Medication Review", "Study Drug Administration/Dispensing", "Protocol Deviation Review", "Vital Signs", "Physical Examination") are marked in nearly every visit column. If a row has marks across 30 columns, visits_marked MUST contain 30 visit names — do NOT collapse or summarize
-- Do not substitute a category summary (e.g. "Safety Assessments") for the individual row items — each row label in the table is its own entry
+- Safety/administrative items (Adverse Event Assessment, Concomitant Medication Review, Study Drug Administration, Protocol Deviation Review, Vital Signs, Physical Examination) are marked in nearly every visit column — populate visits_marked with ALL columns where they are marked, do NOT collapse or summarize
 - Preserve the exact row label as it appears in the table
-- When a table spans multiple pages, the row cells continue on later pages. Read those continuation cells and include the corresponding visit names in visits_marked for that row
-
-Rules for category:
-- Use the exact section header as written in the SoA (e.g. "Laboratory Assessments", "Vital Signs", "Efficacy Assessments", "Patient-Reported Outcomes", "Procedures", "Administrative")
-- Assign each row to its nearest preceding section header
-- If the table has no category headers, use "Assessments" for all rows
+- When a table spans multiple pages, the row cells continue on later pages — read those continuation cells
 
 Rules for visits_marked:
-- Use ONLY visit names from the provided canonical list — NEVER invent names
-- If a SoA column has modifiers like "(Home)", "(Remote)", "(TV)", "(Phone)", "(Optional)", or visit numbers, match it to the base visit name in the provided list
-- If a column in the table has no reasonable match in the provided list, skip it entirely — do NOT add an invented name
-- When multiple SoA tables exist (multiple cohorts/arms/parts), only use visit names from the provided list for the cohort you are extracting
-
-Rules for footnotes:
-- footnote_keys on an assessment row captures superscript letters/numbers/symbols attached to the row label
-- soa_footnotes lists every footnote definition below any SoA table — include full verbatim text
-- Return empty array when no footnotes apply`;
+- Use ONLY visit names from the canonical list provided below — NEVER invent names
+- If a SoA column has modifiers like "(Home)", "(Remote)", "(TV)", "(Phone)", "(Optional)", match it to the base visit name
+- If a column has no match in the canonical list, skip it entirely`;
 
 // ── SoA helpers ───────────────────────────────────────────────────────────────
 
@@ -263,14 +289,14 @@ function detectCohortGroups(visitNames: string[]): Map<string, string[]> | null 
     return groups;
 }
 
-// Build a focused SoA prompt that tells Claude the exact visit names to use
-// and optionally restricts it to a specific cohort's table.
+// Build the SoA extraction prompt — injects canonical visit names so Claude
+// uses exact strings and can't invent column labels.
 function buildSoaPrompt(visitNames: string[], cohortLabel?: string): string {
     const nameList = visitNames.map(n => `- "${n}"`).join('\n');
     const focus = cohortLabel
         ? `Focus ONLY on the SoA table for ${cohortLabel}. Ignore all other cohort/arm tables in this document.\n\n`
         : '';
-    return `${focus}${SOA_PROMPT}
+    return `${focus}${SOA_PROMPT_INSTRUCTIONS}
 
 CANONICAL VISIT NAMES — use EXACTLY these strings in visits_marked:
 ${nameList}
@@ -318,6 +344,44 @@ function transposeRowsToVisits(
 }
 
 // Merge one SoA result into the accumulated result (assessments + first-seen footnotes)
+// Programmatic SoA completeness check — catches silent extraction failures
+// without an extra API call. High-frequency assessments should appear in most
+// visits; if they're missing entirely the extraction likely dropped a page.
+function verifySoaCompleteness(rowResult: SoaRowResult, visitCount: number): void {
+    const rows = rowResult.assessment_rows ?? [];
+    const names = rows.map(r => r.assessment.toLowerCase());
+    const warnings: string[] = [];
+
+    const mustHave = [
+        { key: 'adverse event', label: 'Adverse Event Assessment' },
+        { key: 'concomitant med', label: 'Concomitant Medication Review' },
+        { key: 'vital sign', label: 'Vital Signs' },
+    ];
+    for (const { key, label } of mustHave) {
+        if (!names.some(n => n.includes(key.split(' ')[0]) && n.includes(key.split(' ').slice(-1)[0]))) {
+            warnings.push(`"${label}" not found — may be missing from extraction`);
+        }
+    }
+
+    if (rows.length < 5) {
+        warnings.push(`Only ${rows.length} assessment rows extracted — table may be incomplete`);
+    }
+
+    const visitCoverage = new Set(rows.flatMap(r => r.visits_marked)).size;
+    if (visitCount > 0 && visitCoverage === 0) {
+        warnings.push('No visits were populated — extraction may have failed entirely');
+    } else if (visitCount > 0 && visitCoverage < Math.ceil(visitCount * 0.5)) {
+        warnings.push(`Only ${visitCoverage}/${visitCount} visits have assessments — extraction may be incomplete`);
+    }
+
+    if (warnings.length) {
+        console.warn(`[SoA Verify] ${warnings.length} warning(s):`);
+        for (const w of warnings) console.warn(`  ⚠ ${w}`);
+    } else {
+        console.log(`[SoA Verify] OK — ${rows.length} rows, ${visitCoverage}/${visitCount} visits covered`);
+    }
+}
+
 function mergeSoaResult(acc: SoaResult, incoming: SoaResult): void {
     Object.assign(acc.visit_assessments, incoming.visit_assessments ?? {});
     if (!acc.soa_footnotes.length && incoming.soa_footnotes?.length) {
@@ -423,13 +487,15 @@ export async function extractProtocol(
             cohortEntries.map(([cohort, names]) => {
                 const label = cohort === '__other__' ? undefined : cohort;
                 console.log(`[Extraction] Call 2 — cohort "${label ?? 'main'}" starting (${names.length} visits)`);
-                return claudeExtractFromPDF<SoaRowResult>(
+                return claudeExtractWithTool<SoaRowResult>(
                     pdfBuffer,
+                    SOA_TOOL,
                     buildSoaPrompt(names, label),
                     PROTOCOL_SYSTEM,
                     SOA_MAX_TOKENS,
                 ).then(rowResult => {
                     console.log(`[Extraction] Call 2 cohort "${label ?? 'main'}" complete — ${rowResult.assessment_rows?.length ?? 0} assessment rows`);
+                    verifySoaCompleteness(rowResult, names.length);
                     return transposeRowsToVisits(rowResult, names);
                 });
             })
@@ -439,15 +505,17 @@ export async function extractProtocol(
             else console.error('[Extraction] Call 2 cohort failed:', r.reason);
         }
     } else {
-        console.log(`[Extraction] Call 2: single SoA call (${visitNames.length} visits)`);
+        console.log(`[Extraction] Call 2: single SoA call (${visitNames.length} visits) [tool use + cached PDF]`);
         try {
-            const rowResult = await claudeExtractFromPDF<SoaRowResult>(
+            const rowResult = await claudeExtractWithTool<SoaRowResult>(
                 pdfBuffer,
+                SOA_TOOL,
                 buildSoaPrompt(visitNames),
                 PROTOCOL_SYSTEM,
                 SOA_MAX_TOKENS,
             );
             console.log(`[Extraction] Call 2 complete — ${rowResult.assessment_rows?.length ?? 0} assessment rows, ${rowResult.soa_footnotes?.length ?? 0} footnotes`);
+            verifySoaCompleteness(rowResult, visitNames.length);
             const soaResult = transposeRowsToVisits(rowResult, visitNames);
             mergeSoaResult(accumulated, soaResult);
         } catch (err) {
