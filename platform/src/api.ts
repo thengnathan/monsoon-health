@@ -16,25 +16,66 @@ interface ApiOptions {
     body?: unknown;
 }
 
+// ── Auth token plumbing ──────────────────────────────────────────────────────
+// The API layer is a plain module and can't use Clerk's React hooks, so the
+// AuthProvider registers a getter here. We fetch a FRESH token on every request
+// (Clerk caches internally and only re-mints when near expiry) instead of reading
+// a stale value cached in localStorage on a timer — that cache rotted whenever the
+// tab was backgrounded (setInterval is throttled/suspended) and caused 401 storms.
+
+type TokenGetter = (opts?: { skipCache?: boolean }) => Promise<string | null>;
+
+let tokenGetter: TokenGetter | null = null;
+let onUnauthorized: (() => void) | null = null;
+
+export function setTokenGetter(fn: TokenGetter | null): void {
+    tokenGetter = fn;
+}
+
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+    onUnauthorized = fn;
+}
+
+async function authHeader(skipCache = false): Promise<Record<string, string>> {
+    if (!tokenGetter) return {};
+    try {
+        const token = await tokenGetter({ skipCache });
+        return token ? { Authorization: `Bearer ${token}` } : {};
+    } catch {
+        return {};
+    }
+}
+
+function handleUnauthorized(): void {
+    if (onUnauthorized) onUnauthorized();
+    else if (typeof window !== 'undefined' && !/\/(login|sign-up)/.test(window.location.pathname)) {
+        window.location.assign('/login');
+    }
+}
+
 async function request<T = unknown>(path: string, options: ApiOptions = {}): Promise<T> {
-    const token = localStorage.getItem('monsoon_clerk_token');
-    const config: RequestInit = {
-        method: options.method,
-        cache: 'no-store',
-        headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            ...(options.headers || {}),
-        },
+    const doFetch = async (skipCache: boolean) => {
+        const config: RequestInit = {
+            method: options.method,
+            cache: 'no-store',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await authHeader(skipCache)),
+                ...(options.headers || {}),
+            },
+        };
+        if (options.body !== undefined) {
+            config.body = JSON.stringify(options.body);
+        }
+        return fetch(`${API_BASE}${path}`, config);
     };
 
-    if (options.body !== undefined) {
-        config.body = JSON.stringify(options.body);
-    }
-
-    const res = await fetch(`${API_BASE}${path}`, config);
+    // First attempt with a cached token; if it's expired, force-refresh once and retry.
+    let res = await doFetch(false);
+    if (res.status === 401) res = await doFetch(true);
 
     if (res.status === 401) {
+        handleUnauthorized();
         throw new Error('Session expired');
     }
 
@@ -125,16 +166,16 @@ export const api = {
 
     // Protocol Upload
     uploadProtocol: async (trialId: string, file: File, version?: string) => {
-        const token = localStorage.getItem('monsoon_clerk_token');
         const formData = new FormData();
         formData.append('file', file);
         if (version) formData.append('version', version);
 
         const res = await fetch(`${API_BASE}/trials/${trialId}/protocol`, {
             method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { ...(await authHeader()) },
             body: formData,
         });
+        if (res.status === 401) { handleUnauthorized(); throw new Error('Session expired'); }
         const data = await res.json();
         if (!res.ok) throw new Error((data as { error?: string }).error || 'Upload failed');
         return data as { auto_extracted?: { inclusion_criteria?: string; exclusion_criteria?: string } };
@@ -161,15 +202,15 @@ export const api = {
 
     // Patient Batch Import
     batchImportPatients: async (file: File) => {
-        const token = localStorage.getItem('monsoon_clerk_token');
         const formData = new FormData();
         formData.append('file', file);
 
         const res = await fetch(`${API_BASE}/patients/batch-import`, {
             method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { ...(await authHeader()) },
             body: formData,
         });
+        if (res.status === 401) { handleUnauthorized(); throw new Error('Session expired'); }
         const data = await res.json();
         if (!res.ok) throw new Error((data as { error?: string }).error || 'Batch import failed');
         return data as BatchImportResult;
@@ -177,7 +218,6 @@ export const api = {
 
     // Patient Documents
     uploadPatientDocument: async (file: File, { patient_id, document_type }: { patient_id?: string; document_type?: string } = {}) => {
-        const token = localStorage.getItem('monsoon_clerk_token');
         const formData = new FormData();
         formData.append('file', file);
         if (patient_id) formData.append('patient_id', patient_id);
@@ -185,9 +225,10 @@ export const api = {
 
         const res = await fetch(`${API_BASE}/patients/upload-document`, {
             method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { ...(await authHeader()) },
             body: formData,
         });
+        if (res.status === 401) { handleUnauthorized(); throw new Error('Session expired'); }
         const data = await res.json();
         if (!res.ok) throw new Error((data as { error?: string }).error || 'Upload failed');
         return data as UploadResult;

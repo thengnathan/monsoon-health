@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useUser, useAuth as useClerkAuth } from '@clerk/clerk-react';
-import { api } from '../api';
+import { api, setTokenGetter, setUnauthorizedHandler } from '../api';
 import type { DbUser } from '../types';
 
 interface AuthContextValue {
@@ -14,8 +15,25 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { user: clerkUser, isLoaded: clerkLoaded, isSignedIn } = useUser();
     const { getToken } = useClerkAuth();
+    const navigate = useNavigate();
     const [internalUser, setInternalUser] = useState<DbUser | null>(null);
     const [loading, setLoading] = useState(true);
+
+    // Register Clerk's getToken with the API layer DURING render (not in an effect)
+    // so it's available before any child component's effect fires its first request.
+    // Clerk caches the token and only re-mints when near expiry, so per-request
+    // fetching is cheap and always fresh.
+    setTokenGetter(getToken);
+
+    // On an unrecoverable 401 (token couldn't be refreshed), drop the profile and
+    // bounce to login via the router instead of a hard reload.
+    useEffect(() => {
+        setUnauthorizedHandler(() => {
+            setInternalUser(null);
+            navigate('/login');
+        });
+        return () => setUnauthorizedHandler(null);
+    }, [navigate]);
 
     useEffect(() => {
         if (!clerkLoaded) return;
@@ -28,10 +46,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const fetchProfile = async () => {
             try {
-                const token = await getToken();
-                if (token) {
-                    localStorage.setItem('monsoon_clerk_token', token);
-                }
                 const profile = await api.me();
                 setInternalUser(profile);
             } catch (err) {
@@ -44,17 +58,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         fetchProfile();
     }, [clerkLoaded, isSignedIn, clerkUser]);
-
-    useEffect(() => {
-        if (!isSignedIn) return;
-        const interval = setInterval(async () => {
-            try {
-                const token = await getToken();
-                if (token) localStorage.setItem('monsoon_clerk_token', token);
-            } catch { /* token refresh failed, Clerk will handle re-auth */ }
-        }, 50000);
-        return () => clearInterval(interval);
-    }, [isSignedIn, getToken]);
 
     const user: DbUser | null = internalUser ? {
         ...internalUser,

@@ -8,20 +8,38 @@ export default function DashboardPage() {
     const [data, setData] = useState<TodayData | null>(null);
     const [upcomingVisits, setUpcomingVisits] = useState<UpcomingVisit[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const navigate = useNavigate();
 
-    useEffect(() => {
+    const load = () => {
+        setLoading(true);
+        setError(null);
         Promise.all([
             api.getToday(),
             api.getUpcomingVisits().catch(() => [] as UpcomingVisit[])
         ]).then(([todayData, visits]) => {
             setData(todayData);
             setUpcomingVisits(visits);
-        }).catch(console.error).finally(() => setLoading(false));
-    }, []);
+        }).catch((err: unknown) => {
+            console.error(err);
+            setError(err instanceof Error ? err.message : 'Failed to load dashboard');
+        }).finally(() => setLoading(false));
+    };
+
+    useEffect(load, []);
 
     if (loading) return <div className="loading-spinner"><div className="spinner" /></div>;
-    if (!data) return null;
+
+    if (error || !data) {
+        return (
+            <div className="empty-state" style={{ maxWidth: 420, margin: '4rem auto' }}>
+                <div className="empty-state-icon">⚠</div>
+                <h3>Couldn't load your dashboard</h3>
+                <p style={{ marginBottom: 'var(--space-6)' }}>{error || 'No data returned.'}</p>
+                <button className="btn btn-primary" onClick={load}>Try again</button>
+            </div>
+        );
+    }
 
     return (
         <div>
