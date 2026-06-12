@@ -7,6 +7,7 @@ import { StatusBadge, formatDate } from '../utils';
 import PDFViewerModal from '../components/PDFViewerModal';
 import { Select } from '../components/Select';
 import { Icon } from '../components/Icon';
+import { SegmentedTabs } from '../components/SegmentedTabs';
 import type {
     PatientDetail, PatientClinicalData, SignalType, Trial,
     LabValue, VitalValue, ImagingResult, ClinicalDiagnosis,
@@ -784,20 +785,12 @@ export default function PatientDetailPage() {
                 <main style={{ flex: 1, minWidth: 0 }}>
 
                     {/* Tab Bar */}
-                    <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)', marginBottom: 'var(--space-5)' }}>
-                        {(Object.keys(TAB_LABELS) as Tab[]).map(tab => (
-                            <button key={tab} onClick={() => setActiveTab(tab)} style={{
-                                padding: '10px 18px', border: 'none', background: 'none', cursor: 'pointer',
-                                fontSize: 'var(--font-sm)',
-                                fontWeight: activeTab === tab ? 600 : 400,
-                                color: activeTab === tab ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                                borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
-                                marginBottom: -1, whiteSpace: 'nowrap',
-                            }}>
-                                {TAB_LABELS[tab]}
-                            </button>
-                        ))}
-                    </div>
+                    <SegmentedTabs
+                        tabs={(Object.keys(TAB_LABELS) as Tab[]).map(tab => ({ key: tab, label: TAB_LABELS[tab] }))}
+                        active={activeTab}
+                        onChange={setActiveTab}
+                        style={{ marginBottom: 'var(--space-5)' }}
+                    />
 
                     {/* ── Clinical Tab: Labs + Vitals (2-col) + Imaging + Signals ── */}
                     {activeTab === 'clinical' && (

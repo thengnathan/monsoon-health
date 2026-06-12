@@ -1521,6 +1521,42 @@ button {
   color: var(--accent);
 }
 
+/* --- Segmented Control (premium tab style) --- */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-6);
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.segmented-item {
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  border-radius: calc(var(--radius-md) - 3px);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--transition-fast), background var(--transition-base) cubic-bezier(0.16, 1, 0.3, 1), box-shadow var(--transition-base);
+}
+
+.segmented-item:hover {
+  color: var(--text-primary);
+}
+
+.segmented-item.active {
+  background: var(--bg-surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
 /* --- Toast --- */
 .toast-container {
   position: fixed;

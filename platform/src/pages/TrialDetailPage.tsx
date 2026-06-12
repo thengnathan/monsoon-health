@@ -783,24 +783,26 @@ export default function TrialDetailPage() {
                         const enrolledCases = all.filter(c => c.status === 'ENROLLED');
 
                         const tabStyle = (active: boolean): React.CSSProperties => ({
-                            padding: '8px 14px',
-                            fontSize: 'var(--font-base)',
-                            fontWeight: active ? 600 : 400,
-                            color: active ? 'var(--accent)' : 'var(--text-secondary)',
-                            background: 'none',
+                            padding: 'var(--space-2) var(--space-4)',
+                            fontSize: 'var(--font-sm)',
+                            fontWeight: 500,
+                            color: active ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                            background: active ? 'var(--bg-surface-raised)' : 'transparent',
                             border: 'none',
-                            borderBottom: active ? '3px solid var(--accent)' : '3px solid transparent',
+                            borderRadius: 'calc(var(--radius-md) - 3px)',
+                            boxShadow: active ? 'var(--shadow-sm)' : 'none',
                             cursor: 'pointer',
                             whiteSpace: 'nowrap',
-                            marginBottom: '-1px',
-                            transition: 'color var(--transition-fast)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            transition: 'color var(--transition-fast), background var(--transition-base), box-shadow var(--transition-base)',
                         });
 
                         const badgeStyle = (active: boolean): React.CSSProperties => ({
                             marginLeft: 6,
                             fontSize: 12,
                             fontWeight: 600,
-                            background: active ? 'var(--accent-muted)' : 'var(--bg-secondary)',
+                            background: active ? 'var(--accent-muted)' : 'var(--bg-surface-hover)',
                             color: active ? 'var(--accent)' : 'var(--text-tertiary)',
                             borderRadius: 10,
                             padding: '2px 8px',
@@ -816,7 +818,7 @@ export default function TrialDetailPage() {
 
                         return (
                             <div className="detail-section">
-                                <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: 'var(--space-4)', gap: 0 }}>
+                                <div className="segmented" style={{ marginBottom: 'var(--space-4)' }}>
                                     <button style={tabStyle(caseTab === 'potential')} onClick={() => setCaseTab('potential')}>
                                         Potential
                                         <span style={badgeStyle(caseTab === 'potential')}>{potentialCases.length}</span>

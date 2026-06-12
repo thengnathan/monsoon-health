@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useSiteConfig } from '../contexts/SiteConfigContext';
 import { Select } from '../components/Select';
 import { Icon } from '../components/Icon';
+import { SegmentedTabs } from '../components/SegmentedTabs';
 import type { SpecialtyKey, SpecialtyTemplate, SiteSettingsResponse, SignalType } from '../types';
 
 type Section = 'general' | 'profile' | 'trial_profile' | 'team' | 'preview';
@@ -46,23 +47,7 @@ function SectionNav({ active, onChange }: { active: Section; onChange: (s: Secti
         { key: 'preview', label: 'Patient Preview' },
         { key: 'team', label: 'Team' },
     ];
-    return (
-        <div style={{ display: 'flex', gap: 2, marginBottom: 'var(--space-6)', borderBottom: '1px solid var(--border-subtle)' }}>
-            {items.map(item => (
-                <button key={item.key} onClick={() => onChange(item.key)} style={{
-                    padding: '8px 16px', background: 'none', border: 'none',
-                    borderBottom: active === item.key ? '2px solid var(--accent)' : '2px solid transparent',
-                    marginBottom: -1,
-                    color: active === item.key ? 'var(--accent)' : 'var(--text-tertiary)',
-                    fontWeight: active === item.key ? 600 : 400,
-                    fontSize: 'var(--font-sm)', cursor: 'pointer',
-                    transition: 'all var(--transition-fast)',
-                }}>
-                    {item.label}
-                </button>
-            ))}
-        </div>
-    );
+    return <SegmentedTabs tabs={items} active={active} onChange={onChange} />;
 }
 
 // ── Toggle ────────────────────────────────────────────────────────────────────
@@ -239,17 +224,15 @@ function ProfileSection({ data }: { data: SiteSettingsResponse }) {
                             {/* Specialty row */}
                             <div style={{
                                 display: 'flex', alignItems: 'center', gap: 'var(--space-3)',
-                                padding: 'var(--space-3) var(--space-5)',
-                                borderLeft: `3px solid ${isOn ? meta.color : 'transparent'}`,
-                                background: isOn ? meta.lightBg : 'transparent',
-                                transition: 'all 0.2s',
+                                padding: 'var(--space-4) var(--space-5)',
+                                transition: 'background 0.2s',
                             }}>
                                 <div style={{
                                     width: 34, height: 34, borderRadius: 'var(--radius-sm)', flexShrink: 0,
-                                    background: isOn ? meta.color : 'var(--bg-root)',
-                                    border: `1px solid ${isOn ? meta.color : 'var(--border-default)'}`,
+                                    background: isOn ? 'var(--text-primary)' : 'var(--bg-root)',
+                                    border: `1px solid ${isOn ? 'var(--text-primary)' : 'var(--border-default)'}`,
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    color: isOn ? '#fff' : 'var(--text-tertiary)',
+                                    color: isOn ? 'var(--text-inverse)' : 'var(--text-tertiary)',
                                     fontWeight: 700, fontSize: 13, transition: 'all 0.2s',
                                 }}>
                                     {meta.icon}
@@ -257,13 +240,13 @@ function ProfileSection({ data }: { data: SiteSettingsResponse }) {
 
                                 <div style={{ flex: 1 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <span style={{ fontWeight: 600, fontSize: 'var(--font-sm)', color: isOn ? meta.color : 'var(--text-primary)' }}>
+                                        <span style={{ fontWeight: 600, fontSize: 'var(--font-sm)', color: 'var(--text-primary)' }}>
                                             {tmpl.label}
                                         </span>
                                         {isOn && (
                                             <span style={{
                                                 fontSize: 10, padding: '1px 6px', borderRadius: 'var(--radius-full)',
-                                                background: `${meta.color}20`, color: meta.color, fontWeight: 600,
+                                                background: 'var(--bg-surface-hover)', color: 'var(--text-secondary)', fontWeight: 600,
                                             }}>
                                                 {enabledCount}/{tmpl.options.length} fields
                                             </span>
@@ -276,17 +259,17 @@ function ProfileSection({ data }: { data: SiteSettingsResponse }) {
 
                                 {isOn && (
                                     <button className="btn btn-ghost btn-sm" onClick={() => setExpandedSpecialty(isExpanded ? null : key)}
-                                        style={{ color: meta.color, fontSize: 11 }}>
+                                        style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
                                         {isExpanded ? 'Done' : 'Fields'}
                                     </button>
                                 )}
 
-                                <Toggle checked={isOn} onChange={() => toggleSpecialty(key)} color={meta.color} />
+                                <Toggle checked={isOn} onChange={() => toggleSpecialty(key)} color="var(--text-primary)" />
                             </div>
 
                             {/* Expanded field picker */}
                             {isExpanded && (
-                                <div style={{ borderTop: `1px solid ${meta.color}20`, background: 'var(--bg-root)', padding: 'var(--space-4) var(--space-5)' }}>
+                                <div style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-root)', padding: 'var(--space-4) var(--space-5)' }}>
                                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
                                         <button className="btn btn-ghost btn-sm" onClick={() => selectAll(key)}>Select all</button>
                                         <button className="btn btn-ghost btn-sm" onClick={() => selectNone(key)}>Clear all</button>
@@ -296,9 +279,9 @@ function ProfileSection({ data }: { data: SiteSettingsResponse }) {
                                             <div key={section}>
                                                 <div style={{
                                                     fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-                                                    letterSpacing: '0.07em', color: meta.color,
+                                                    letterSpacing: '0.07em', color: 'var(--text-tertiary)',
                                                     marginBottom: 6, paddingBottom: 4,
-                                                    borderBottom: `1px solid ${meta.color}25`,
+                                                    borderBottom: '1px solid var(--border-subtle)',
                                                 }}>
                                                     {SECTION_LABELS[section] || section}
                                                 </div>
@@ -311,21 +294,21 @@ function ProfileSection({ data }: { data: SiteSettingsResponse }) {
                                                                 cursor: 'pointer', fontSize: 'var(--font-sm)',
                                                                 color: checked ? 'var(--text-primary)' : 'var(--text-secondary)',
                                                                 padding: '4px 6px', borderRadius: 4,
-                                                                background: checked ? 'var(--accent-sea-blue-subtle)' : 'transparent',
+                                                                background: checked ? 'var(--bg-surface-hover)' : 'transparent',
                                                                 transition: 'background 0.15s, color 0.15s',
                                                                 userSelect: 'none',
                                                             }}>
                                                                 <span style={{
                                                                     width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                                                                    border: `1.5px solid ${checked ? 'var(--accent-sea-blue)' : 'var(--border-strong)'}`,
-                                                                    background: checked ? 'var(--accent-sea-blue)' : 'transparent',
+                                                                    border: `1.5px solid ${checked ? 'var(--text-primary)' : 'var(--border-strong)'}`,
+                                                                    background: checked ? 'var(--text-primary)' : 'transparent',
+                                                                    color: 'var(--bg-root)',
                                                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                                     transition: 'all 0.15s',
-                                                                    opacity: checked ? 0.85 : 1,
                                                                 }}>
                                                                     {checked && (
                                                                         <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
-                                                                            <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                                                            <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                                                                         </svg>
                                                                     )}
                                                                 </span>
@@ -413,19 +396,17 @@ function PreviewSection() {
                             display: 'flex', alignItems: 'center', gap: 'var(--space-4)',
                             padding: 'var(--space-4) var(--space-5)',
                             borderBottom: isLast ? 'none' : '1px solid var(--border-subtle)',
-                            borderLeft: `3px solid ${isOn ? 'var(--accent)' : 'transparent'}`,
-                            background: isOn ? 'var(--accent-muted)' : 'transparent',
-                            transition: 'all 0.2s',
+                            transition: 'background 0.2s',
                         }}>
                             <div style={{ flex: 1 }}>
-                                <div style={{ fontWeight: 600, fontSize: 'var(--font-sm)', color: isOn ? 'var(--accent)' : 'var(--text-primary)', marginBottom: 2 }}>
+                                <div style={{ fontWeight: 600, fontSize: 'var(--font-sm)', color: 'var(--text-primary)', marginBottom: 2 }}>
                                     {sec.label}
                                 </div>
                                 <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)' }}>
                                     {sec.description}
                                 </div>
                             </div>
-                            <Toggle checked={isOn} onChange={() => toggle(sec.key)} color="var(--accent)" />
+                            <Toggle checked={isOn} onChange={() => toggle(sec.key)} color="var(--text-primary)" />
                         </div>
                     );
                 })}
@@ -682,17 +663,15 @@ function TrialProfileSection({ data }: { data: SiteSettingsResponse }) {
                             {/* Specialty row */}
                             <div style={{
                                 display: 'flex', alignItems: 'center', gap: 'var(--space-3)',
-                                padding: 'var(--space-3) var(--space-5)',
-                                borderLeft: `3px solid ${isOn ? meta.color : 'transparent'}`,
-                                background: isOn ? meta.lightBg : 'transparent',
-                                transition: 'all 0.2s',
+                                padding: 'var(--space-4) var(--space-5)',
+                                transition: 'background 0.2s',
                             }}>
                                 <div style={{
                                     width: 34, height: 34, borderRadius: 'var(--radius-sm)', flexShrink: 0,
-                                    background: isOn ? meta.color : 'var(--bg-root)',
-                                    border: `1px solid ${isOn ? meta.color : 'var(--border-default)'}`,
+                                    background: isOn ? 'var(--text-primary)' : 'var(--bg-root)',
+                                    border: `1px solid ${isOn ? 'var(--text-primary)' : 'var(--border-default)'}`,
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    color: isOn ? '#fff' : 'var(--text-tertiary)',
+                                    color: isOn ? 'var(--text-inverse)' : 'var(--text-tertiary)',
                                     fontWeight: 700, fontSize: 13, transition: 'all 0.2s',
                                 }}>
                                     {meta.icon}
@@ -700,13 +679,13 @@ function TrialProfileSection({ data }: { data: SiteSettingsResponse }) {
 
                                 <div style={{ flex: 1 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <span style={{ fontWeight: 600, fontSize: 'var(--font-sm)', color: isOn ? meta.color : 'var(--text-primary)' }}>
+                                        <span style={{ fontWeight: 600, fontSize: 'var(--font-sm)', color: 'var(--text-primary)' }}>
                                             {tmpl.label}
                                         </span>
                                         {isOn && selectedSet.size > 0 && (
                                             <span style={{
                                                 fontSize: 10, padding: '1px 6px', borderRadius: 'var(--radius-full)',
-                                                background: `${meta.color}20`, color: meta.color, fontWeight: 600,
+                                                background: 'var(--bg-surface-hover)', color: 'var(--text-secondary)', fontWeight: 600,
                                             }}>
                                                 {selectedSet.size}/{types.length} signals
                                             </span>
@@ -720,17 +699,17 @@ function TrialProfileSection({ data }: { data: SiteSettingsResponse }) {
                                 {isOn && (
                                     <button className="btn btn-ghost btn-sm"
                                         onClick={() => setExpandedSpecialty(isExpanded ? null : key)}
-                                        style={{ color: meta.color, fontSize: 11 }}>
+                                        style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
                                         {isExpanded ? 'Done' : 'Signals'}
                                     </button>
                                 )}
 
-                                <Toggle checked={isOn} onChange={() => toggleSpecialty(key)} color={meta.color} />
+                                <Toggle checked={isOn} onChange={() => toggleSpecialty(key)} color="var(--text-primary)" />
                             </div>
 
                             {/* Expanded signal picker */}
                             {isExpanded && (
-                                <div style={{ borderTop: `1px solid ${meta.color}20`, background: 'var(--bg-root)', padding: 'var(--space-4) var(--space-5)' }}>
+                                <div style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-root)', padding: 'var(--space-4) var(--space-5)' }}>
                                     {loadingSignals ? (
                                         <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--font-sm)' }}>Loading…</div>
                                     ) : types.length === 0 ? (
@@ -753,9 +732,9 @@ function TrialProfileSection({ data }: { data: SiteSettingsResponse }) {
                                                     <div key={cat}>
                                                         <div style={{
                                                             fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-                                                            letterSpacing: '0.07em', color: meta.color,
+                                                            letterSpacing: '0.07em', color: 'var(--text-tertiary)',
                                                             marginBottom: 6, paddingBottom: 4,
-                                                            borderBottom: `1px solid ${meta.color}25`,
+                                                            borderBottom: '1px solid var(--border-subtle)',
                                                         }}>
                                                             {cat}
                                                         </div>
@@ -768,20 +747,21 @@ function TrialProfileSection({ data }: { data: SiteSettingsResponse }) {
                                                                         cursor: 'pointer', fontSize: 'var(--font-sm)',
                                                                         color: checked ? 'var(--text-primary)' : 'var(--text-secondary)',
                                                                         padding: '4px 6px', borderRadius: 4,
-                                                                        background: checked ? `${meta.color}12` : 'transparent',
+                                                                        background: checked ? 'var(--bg-surface-hover)' : 'transparent',
                                                                         transition: 'background 0.15s, color 0.15s',
                                                                         userSelect: 'none',
                                                                     }}>
                                                                         <span style={{
                                                                             width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                                                                            border: `1.5px solid ${checked ? meta.color : 'var(--border-strong)'}`,
-                                                                            background: checked ? meta.color : 'transparent',
+                                                                            border: `1.5px solid ${checked ? 'var(--text-primary)' : 'var(--border-strong)'}`,
+                                                                            background: checked ? 'var(--text-primary)' : 'transparent',
+                                                                            color: 'var(--bg-root)',
                                                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                                            transition: 'all 0.15s', opacity: checked ? 0.85 : 1,
+                                                                            transition: 'all 0.15s',
                                                                         }}>
                                                                             {checked && (
                                                                                 <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
-                                                                                    <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                                                                    <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                                                                                 </svg>
                                                                             )}
                                                                         </span>
@@ -838,17 +818,27 @@ export default function SettingsPage() {
     const [data, setData] = useState<SiteSettingsResponse | null>(null);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
+    const load = () => {
+        setLoading(true);
         api.getSiteSettings()
             .then(setData)
             .catch(() => addToast('Failed to load settings', 'error'))
             .finally(() => setLoading(false));
-    }, []);
+    };
+
+    useEffect(load, []);
 
     const isManager = user?.role === 'MANAGER';
 
     if (loading) return <div className="loading-spinner"><div className="spinner" /></div>;
-    if (!data) return <div className="empty-state"><h3>Failed to load settings</h3></div>;
+    if (!data) return (
+        <div className="empty-state" style={{ maxWidth: 420, margin: '4rem auto' }}>
+            <div className="empty-state-icon"><Icon name="alert" size={40} strokeWidth={1.5} /></div>
+            <h3>Couldn't load settings</h3>
+            <p style={{ marginBottom: 'var(--space-6)' }}>The server may have hit a momentary connection hiccup.</p>
+            <button className="btn btn-primary" onClick={load}>Try again</button>
+        </div>
+    );
 
     return (
         <div>
