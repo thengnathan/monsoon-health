@@ -10,7 +10,7 @@ import {
     ExpandableScreenContent,
 } from '../animations/expandable-screen';
 
-const CONTACT_EMAIL = 'hello@monsoonhealth.com'; // TODO: confirm the real inbox
+const CONTACT_EMAIL = 'team@monsoon-health.com';
 
 export default function DemoCTA({
     layoutId,
